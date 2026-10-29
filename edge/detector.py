@@ -38,6 +38,7 @@ class Detector:
     post_s: float = 1.5
     enfriamiento_s: float = 8.0      # no repetir la misma clase en la misma zona dentro de este lapso
     reloj: Callable[[], float] = time.time
+    observador: Callable[[np.ndarray, float], None] | None = None   # --diagnostico: ve cada ventana ya clasificada
     _siguiente: int = 0
     _ultima_por_clase: dict = field(default_factory=dict)
     pendientes: list = field(default_factory=list)
@@ -62,6 +63,8 @@ class Detector:
 
     def _evaluar(self, ventana: np.ndarray, t: float):
         resultados = self.clasificador.clasificar(ventana)
+        if self.observador:
+            self.observador(ventana, t)
         if not resultados:
             return
         detecciones = [Deteccion("audio", clase, conf, self.nombre_audio, self.zona, t) for clase, conf, _ in resultados]

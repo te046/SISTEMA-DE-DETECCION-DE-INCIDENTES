@@ -23,6 +23,8 @@ Bluetooth desde el panel, la exportación para la tesis, la app de escritorio ni
 2. **Captura y detección**, en otra consola: `python -m edge`
    - `python -m edge --listar` muestra los micrófonos (marca los Bluetooth) y las cámaras con su índice.
    - Ejemplo: `python -m edge --microfono 2 --camara 0 --zona "Zona 1"`. Use `--camara ninguna` para solo audio.
+   - `--diagnostico` imprime en la consola, una vez por segundo, el nivel del micrófono (dBFS) y las 3 clases
+     de AudioSet con mayor puntaje. Sirve para calibrar el umbral y el mapeo. No guarda ni envía audio.
    - Al arrancar registra el micrófono y la cámara en «Estado del sistema» y envía latidos cada 5 s. Si una
      fuente falla, el panel la muestra desconectada y el edge reintenta con espera creciente (1, 2, 4… 30 s).
 3. Abra la dirección que imprimió `run.py`. La documentación de la API está en `/docs`.

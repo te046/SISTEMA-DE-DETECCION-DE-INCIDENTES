@@ -37,6 +37,8 @@ def argumentos():
     ap.add_argument("--nombre-camara", default="Webcam de la laptop")
     ap.add_argument("--umbral", type=float, default=0.5, help="confianza mínima del modelo de audio (0–1)")
     ap.add_argument("--fps", type=float, default=10.0, help="fotogramas por segundo que se guardan")
+    ap.add_argument("--diagnostico", action="store_true",
+                    help="muestra en consola, cada segundo, el nivel del micrófono y las 3 clases con mayor puntaje (no guarda audio)")
     return ap.parse_args()
 
 
@@ -76,6 +78,10 @@ def main():
         b_video = BufferVideo(segundos=15, fps=a.fps)
         cap_video = CapturaVideo(b_video, int(a.camara) if a.camara.isdigit() else a.camara, fps=a.fps)
     detector = Detector(clasificador, b_audio, b_video, a.zona, a.nombre_microfono, a.nombre_camara if cap_video else None)
+    if a.diagnostico:
+        from .diagnostico import Diagnostico
+        detector.observador = Diagnostico(clasificador, imprimir=lambda s: print(s, flush=True))
+        log.info("Modo diagnóstico activo: solo se imprime texto en esta consola; no se guarda ni envía audio.")
 
     detener = threading.Event()
 

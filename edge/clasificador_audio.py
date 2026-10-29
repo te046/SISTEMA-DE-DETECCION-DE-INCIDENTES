@@ -65,10 +65,12 @@ class ClasificadorYamnet:
         self.nombres = leer_nombres()
         self.indices = indices_por_clase(self.nombres)
         self.umbral = umbral
+        self.ultimos_puntajes: np.ndarray | None = None      # los usa --diagnostico sin repetir la inferencia
 
     def puntajes(self, ventana: np.ndarray) -> np.ndarray:
         """`ventana`: audio mono float32 a 16 kHz en [-1, 1]."""
         return self.sesion.run(["output_0"], {"waveform": np.asarray(ventana, dtype=np.float32)})[0]
 
     def clasificar(self, ventana: np.ndarray) -> list[tuple[str, float, str]]:
-        return [(c, conf, self.nombres[j]) for c, conf, j in mapear_puntajes(self.puntajes(ventana), self.indices, self.umbral)]
+        self.ultimos_puntajes = self.puntajes(ventana)
+        return [(c, conf, self.nombres[j]) for c, conf, j in mapear_puntajes(self.ultimos_puntajes, self.indices, self.umbral)]

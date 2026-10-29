@@ -23,7 +23,15 @@ class ClienteApi:
         return self._ok(self.http.post("/api/v1/dispositivos/registro", json={"nombre": nombre, "tipo": tipo, "zona": zona}))["id"]
 
     def latido(self, disp_id: int, activo: bool = True) -> None:
-        self._ok(self.http.post(f"/api/v1/dispositivos/{disp_id}/latido", json={"activo": activo}))
+        """Un reintento inmediato si la conexión reutilizada ya estaba cerrada (WinError 10053/10054):
+        el servidor cierra las conexiones inactivas y el latido puede tomar una justo cuando eso ocurre.
+        Es seguro repetirlo porque el latido es idempotente."""
+        ruta, cuerpo = f"/api/v1/dispositivos/{disp_id}/latido", {"activo": activo}
+        try:
+            r = self.http.post(ruta, json=cuerpo)
+        except (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError):
+            r = self.http.post(ruta, json=cuerpo)
+        self._ok(r)
 
     def subir(self, nombre: str, datos: bytes, mime: str) -> str:
         return self._ok(self.http.post("/api/v1/evidencias", files={"archivo": (nombre, datos, mime)}))["url"]
