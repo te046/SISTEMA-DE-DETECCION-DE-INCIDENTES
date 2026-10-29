@@ -7,6 +7,9 @@ DATA_DIR = Path(os.environ.get("VIGILANCIA_DATA", ROOT / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = Path(os.environ.get("VIGILANCIA_DB", DATA_DIR / "vigilancia.db"))
 FRONTEND_DIR = Path(os.environ.get("VIGILANCIA_FRONTEND", ROOT / "frontend"))
+EVIDENCIAS_DIR = DATA_DIR / "evidencias"        # clips de alertas (datos sensibles: solo con sesión)
+EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
+EVIDENCIA_MAX_BYTES = 25 * 1024 * 1024
 
 TOKEN_MINUTES = int(os.environ.get("TOKEN_MINUTES", "480"))      # turno de 8 h
 MAX_FAILED_LOGINS = 5                                               # control de seguridad del diseño

@@ -1,0 +1,6 @@
+# Módulo edge (captura y modelos). Se instala en el mismo .venv que el backend.
+numpy>=2,<3
+opencv-python>=4.10,<5        # captura de video; la serie 5 es nueva y aún no se probó aquí
+sounddevice>=0.5,<0.6         # captura de audio (PortAudio)
+onnxruntime>=1.20,<1.24       # YAMNet en CPU (≈13 ms por ventana de 1 s en la laptop de desarrollo)
+httpx>=0.27                   # cliente HTTP hacia la API

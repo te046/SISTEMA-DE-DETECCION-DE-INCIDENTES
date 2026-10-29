@@ -1,4 +1,4 @@
-import { api, ApiError, sesion, guardarSesion } from "./api.js";
+import { api, archivo, ApiError, sesion, guardarSesion } from "./api.js";
 
 const $app = document.getElementById("app");
 const PRIO = { 1: "Alta", 2: "Media", 3: "Baja" };
@@ -12,6 +12,7 @@ const S = {
   filtro: 0, selId: null, clics: 0, ultimosClics: null,
   msg: null, ayuda: false, errLogin: "", verClave: false, reproduciendo: false,
   vistas: new Set(), usuarioCampo: "", claveCampo: "",
+  medios: {},               // url de evidencia -> "cargando" | "error" | blob:
 };
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -41,6 +42,7 @@ async function llamar(ruta, opts) {
 }
 
 function cerrarSesion(aviso = "") {
+  Object.values(S.medios).forEach((u) => u.startsWith("blob:") && URL.revokeObjectURL(u)); S.medios = {};
   guardarSesion(null); S.ses = null; S.pantalla = "login"; S.errLogin = aviso; S.msg = null; detenerPoll(); render();
 }
 
@@ -163,12 +165,29 @@ function vShell(titulo, contenido) {
     <footer><span>Universidad de Huánuco · Ingeniería de Sistemas e Informática</span><span>M06 Panel web de alertas · v1.0</span></footer></div>`;
 }
 
+// Las evidencias exigen sesión: se descargan con el token y se muestran como blob: (se piden una sola vez).
+function medio(url) {
+  if (!url.startsWith("/api/v1/evidencias/")) return url;
+  if (!(url in S.medios)) {
+    S.medios[url] = "cargando";
+    archivo(url, S.ses?.token).then((b) => { S.medios[url] = b; }).catch(() => { S.medios[url] = "error"; }).finally(render);
+  }
+  return S.medios[url];
+}
+
+function reproductor(tipo, url, a) {
+  const src = medio(url), nombre = tipo === "video" ? "Video" : "Audio";
+  if (src === "cargando") return `<figure><div class="sin-evidencia" aria-busy="true">Cargando ${nombre.toLowerCase()}…</div><figcaption class="lbl">${nombre}</figcaption></figure>`;
+  if (src === "error") return `<figure><div class="sin-evidencia">No se pudo cargar el ${nombre.toLowerCase()}. Vuelva a abrir la alerta; si sigue igual, pudo borrarse por la política de retención.</div><figcaption class="lbl">${nombre}</figcaption></figure>`;
+  return `<figure><${tipo} controls preload="metadata" src="${esc(src)}" aria-label="Evidencia de ${nombre.toLowerCase()} de la alerta ${esc(a.codigo)}"></${tipo}><figcaption class="lbl">${nombre} · clip alrededor del evento</figcaption></figure>`;
+}
+
 function evidencia(a) {
   const mods = a.modalidades.map((m) => m.modalidad);
   const v = a.evidencia_video, au = a.evidencia_audio;
   let html = "";
-  if (v) html += `<figure><video controls preload="metadata" src="${esc(v)}" aria-label="Evidencia de video de la alerta ${esc(a.codigo)}"></video><figcaption class="lbl">Video</figcaption></figure>`;
-  if (au) html += `<figure><audio controls preload="metadata" src="${esc(au)}" aria-label="Evidencia de audio de la alerta ${esc(a.codigo)}"></audio><figcaption class="lbl">Audio</figcaption></figure>`;
+  if (v) html += reproductor("video", v, a);
+  if (au) html += reproductor("audio", au, a);
   if (!html && a.origen === "simulado") {
     if (mods.includes("video")) html += `<figure><svg viewBox="0 0 320 180" role="img" aria-label="Ilustración simulada de un recuadro de detección"><rect y="120" width="320" height="60" fill="#12403B"/><rect x="28" y="38" width="74" height="82" fill="#12403B"/><rect x="212" y="28" width="82" height="92" fill="#0F3631"/><rect x="128" y="62" width="64" height="84" fill="none" stroke="#FF7A5C" stroke-width="4" rx="4"/><rect x="128" y="38" width="172" height="24" fill="#FF7A5C" rx="4"/><text x="135" y="55" font-size="13" font-family="Plus Jakarta Sans,sans-serif" fill="#0C2B28" font-weight="800">${esc(a.tipo.split(" (")[0].slice(0, 18))} ${Math.round(a.confianza * 100)} %</text></svg><figcaption class="lbl">Video (ilustración simulada)</figcaption></figure>`;
     if (mods.includes("audio")) html += `<figure><svg viewBox="0 0 320 180" role="img" aria-label="Ilustración simulada de una onda de audio"><g fill="#1FB09E">${[20, 40, 10, 60, 30, 80, 120, 140, 100, 70, 110, 50, 24, 10, 36, 16, 6, 20, 8, 12].map((h, i) => `<rect x="${10 + i * 14}" y="${90 - h / 2}" width="8" height="${h}" rx="3"/>`).join("")}</g></svg><figcaption class="lbl">Audio (ilustración simulada)</figcaption></figure>`;
@@ -231,7 +250,7 @@ function vIndicadores() {
 
 function vEstado() {
   const puede = S.ses.usuario.rol !== "vigilante";
-  const filas = S.devs.map((d) => `<tr><td style="font-weight:700">${esc(d.nombre)}</td><td>${d.tipo === "camara" ? "Cámara IP (RTSP)" : "Nodo de micrófono"}</td><td>${esc(d.zona)}</td>
+  const filas = S.devs.map((d) => `<tr><td style="font-weight:700">${esc(d.nombre)}</td><td>${d.tipo === "camara" ? "Cámara" : "Micrófono"}</td><td>${esc(d.zona)}</td>
     <td><span class="pill ${d.activo ? "ok" : "off"}">${d.activo ? "● Activo" : "▲ Desconectado"}</span></td>
     <td>${puede ? `<button class="btn btn-ghost" style="min-height:44px;padding:6px 16px" data-disp="${d.id}" data-activo="${d.activo ? 0 : 1}">${d.activo ? "Marcar desconectado" : "Restablecer"}</button>` : '<span class="lbl">Solo responsables</span>'}</td></tr>`).join("");
   return `<section style="display:flex;flex-direction:column;gap:20px"><div><h1 class="h-title">Estado del sistema</h1><p class="lbl h-sub">Cámaras y nodos de audio</p></div>

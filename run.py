@@ -42,6 +42,8 @@ def main():
     from app import seed
     seed.main()
     puerto = elegir(a.port)
+    from app import config
+    (config.DATA_DIR / ".api_url").write_text(f"http://{a.host}:{puerto}", encoding="utf-8")   # lo lee python -m edge
     print(f"\nPanel:  http://{a.host}:{puerto}/\nAPI:    http://{a.host}:{puerto}/docs\n(Ctrl+C para detener)\n")
     import uvicorn
     uvicorn.run("app.main:app", host=a.host, port=puerto, log_level="info")

@@ -12,6 +12,13 @@ export class ApiError extends Error {
   constructor(status, mensaje, solucion) { super(mensaje); this.status = status; this.solucion = solucion; }
 }
 
+// Descarga un archivo protegido (evidencia) con la sesión y devuelve una URL local (blob:) para <video>/<audio>.
+export async function archivo(ruta, token) {
+  const r = await fetch(ruta, { headers: { Authorization: "Bearer " + token } });
+  if (!r.ok) throw new ApiError(r.status, "No se pudo cargar la evidencia.", "Vuelva a abrir la alerta. Si sigue igual, puede haberse borrado por la política de retención.");
+  return URL.createObjectURL(await r.blob());
+}
+
 export async function api(ruta, { metodo = "GET", cuerpo, token } = {}) {
   const cab = { "Content-Type": "application/json" };
   if (token) cab.Authorization = "Bearer " + token;

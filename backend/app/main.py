@@ -1,9 +1,10 @@
-import json
+import json, re, uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -248,12 +249,74 @@ def cambiar_dispositivo(disp_id: int, c: CambioDispositivo, u=Depends(usuario_ac
         return dict(con.execute("SELECT * FROM dispositivos WHERE id=?", (disp_id,)).fetchone())
 
 
+class Latido(BaseModel):
+    activo: bool = True
+
+
 @app.post("/api/v1/dispositivos/{disp_id}/latido", dependencies=[Depends(requiere_ingesta)])
-def latido(disp_id: int):
-    """El módulo edge avisa que el dispositivo sigue conectado (RF-01, RF-02)."""
+def latido(disp_id: int, l: Latido | None = None):
+    """El módulo edge avisa si el dispositivo sigue conectado (RF-01, RF-02).
+    Con {"activo": false} informa que la captura falló y el panel muestra el aviso."""
+    activo = l.activo if l else True
     with db.tx() as con:
-        con.execute("UPDATE dispositivos SET ultimo_latido=?, activo=1 WHERE id=?", (iso(ahora()), disp_id))
+        if activo:
+            con.execute("UPDATE dispositivos SET ultimo_latido=?, activo=1 WHERE id=?", (iso(ahora()), disp_id))
+        else:
+            con.execute("UPDATE dispositivos SET activo=0 WHERE id=?", (disp_id,))
     return {"ok": True}
+
+
+class RegistroEdge(BaseModel):
+    nombre: str = Field(min_length=1, max_length=80)
+    tipo: Literal["camara", "audio"]
+    zona: str = Field(min_length=1, max_length=80)
+
+
+@app.post("/api/v1/dispositivos/registro", dependencies=[Depends(requiere_ingesta)])
+def registrar_desde_edge(r: RegistroEdge):
+    """El módulo edge registra (o reutiliza por nombre) la fuente que está capturando y obtiene su id."""
+    with db.tx() as con:
+        fila = con.execute("SELECT * FROM dispositivos WHERE nombre=?", (r.nombre,)).fetchone()
+        if fila and fila["tipo"] != r.tipo:
+            error(409, f"Ya existe «{r.nombre}» con otro tipo.", "Use otro nombre para esta fuente.")
+        if not fila:
+            con.execute("INSERT INTO dispositivos(nombre,tipo,zona) VALUES (?,?,?)", (r.nombre, r.tipo, r.zona))
+            con.execute("INSERT INTO auditoria(momento,usuario,accion,detalle) VALUES (?,?,?,?)",
+                        (iso(ahora()), "edge", "dispositivo_registrado", r.nombre))
+        else:
+            con.execute("UPDATE dispositivos SET zona=? WHERE id=?", (r.zona, fila["id"]))
+        return dict(con.execute("SELECT * FROM dispositivos WHERE nombre=?", (r.nombre,)).fetchone())
+
+
+# ---------------------------------------------------------------- evidencias (clips de audio y video)
+EVIDENCIA_TIPOS = {".webm": "video/webm", ".wav": "audio/wav"}
+EVIDENCIA_NOMBRE = re.compile(r"^[a-f0-9]{32}\.(webm|wav)$")
+
+
+@app.post("/api/v1/evidencias", status_code=201, dependencies=[Depends(requiere_ingesta)])
+async def subir_evidencia(archivo: UploadFile = File(...)):
+    """El módulo edge sube el clip de una alerta. El nombre lo pone el servidor (no se confía en el del cliente)."""
+    ext = Path(archivo.filename or "").suffix.lower()
+    if ext not in EVIDENCIA_TIPOS:
+        error(415, "Tipo de evidencia no admitido.", "Envíe un clip .webm (video) o .wav (audio).")
+    datos = await archivo.read(config.EVIDENCIA_MAX_BYTES + 1)
+    if len(datos) > config.EVIDENCIA_MAX_BYTES:
+        error(413, "El clip es demasiado grande.", "Reduzca la duración del clip o la resolución del video.")
+    if not datos:
+        error(422, "El clip está vacío.", "Revise que la captura esté funcionando.")
+    nombre = uuid.uuid4().hex + ext
+    (config.EVIDENCIAS_DIR / nombre).write_bytes(datos)
+    return {"url": f"/api/v1/evidencias/{nombre}"}
+
+
+@app.get("/api/v1/evidencias/{nombre}")
+def ver_evidencia(nombre: str, u=Depends(usuario_actual)):
+    if not EVIDENCIA_NOMBRE.match(nombre):
+        error(404, "No existe esa evidencia.", "Actualice la lista de alertas.")
+    ruta = config.EVIDENCIAS_DIR / nombre
+    if not ruta.is_file():
+        error(404, "La evidencia ya no está disponible.", "Pudo borrarse por la política de retención.")
+    return FileResponse(ruta, media_type=EVIDENCIA_TIPOS[ruta.suffix], headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/v1/salud")
