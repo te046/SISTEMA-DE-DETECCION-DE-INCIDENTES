@@ -70,6 +70,9 @@ Dockerfile + `docker-compose` (API, proxy Caddy con HTTPS, PostgreSQL), variable
 - **Video (línea base):** VideoMAE RWF-2000 (CC BY-NC 4.0, procedencia en `edge/modelos/PROCEDENCIA.md`). Medir
   precisión/recall con grabaciones de prueba etiquetadas antes de declarar cualquier métrica; la exactitud del autor
   (0,73) no es un resultado del proyecto.
+- **`.venv-export/` (869 MB):** entorno aparte con PyTorch CPU y transformers que solo sirve para re-exportar el
+  modelo de video (`scripts/exportar_modelo_video.py`). No forma parte de la app. Teo decide cuándo borrarlo:
+  no tocarlo sin su OK.
 - **Cámaras IP automáticas:** búsqueda ONVIF/WS-Discovery de cámaras en la red local. Hoy se agregan a mano en
   «Buscar dispositivos» (dirección validada y cifrada).
 - **Webcam local:** en la laptop de Teo no se detecta (permiso de Windows, obturador u otra app). Ese camino solo
