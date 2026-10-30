@@ -5,9 +5,27 @@ registrar. Así se puede probar sin cámaras ni micrófonos. Los umbrales y las 
 prioridad son parámetros de diseño y deben calibrarse con la línea base (O1) y con
 grabaciones reales del pabellón: aquí no son resultados medidos.
 """
+import os
 from dataclasses import dataclass
 
-UMBRAL_MINIMO = 0.50          # por debajo de este valor un modelo no genera evidencia
+UMBRAL_POR_DEFECTO = 0.50
+
+
+def umbral_desde_entorno(valor: str | None) -> float:
+    """PROVISIONAL, solo para demostraciones: VIGILANCIA_UMBRAL_FUSION cambia el mínimo de la fusión.
+    Las mediciones de la tesis se hacen con el valor por defecto (0,50) hasta calibrarlo."""
+    if valor in (None, ""):
+        return UMBRAL_POR_DEFECTO
+    try:
+        u = float(valor.replace(",", "."))
+    except ValueError:
+        raise ValueError("VIGILANCIA_UMBRAL_FUSION debe ser un número entre 0 y 1, por ejemplo 0.30.") from None
+    if not 0.0 < u <= 1.0:
+        raise ValueError("VIGILANCIA_UMBRAL_FUSION debe estar entre 0 (excluido) y 1.")
+    return u
+
+
+UMBRAL_MINIMO = umbral_desde_entorno(os.environ.get("VIGILANCIA_UMBRAL_FUSION"))   # por debajo, un modelo no genera evidencia
 VENTANA_SEGUNDOS = 3.0        # video y audio se fusionan si ocurren dentro de esta ventana
 
 # Clases acústicas de mayor urgencia (ajustar con las clases reales del modelo de audio).
@@ -38,11 +56,12 @@ def fusionar(detecciones: list[Deteccion]) -> dict | None:
     mods = {d.modalidad for d in cercanas}
     audio_urgente = any(d.modalidad == "audio" and d.clase.lower() in AUDIO_URGENTE for d in cercanas)
 
-    if mods == {"video", "audio"} and audio_urgente:
+    # Regla aprobada por Teo (30/10/2026): video y audio coinciden = alta siempre; solo video = baja o media.
+    if mods == {"video", "audio"}:
         prioridad = 1
-    elif audio_urgente or mods == {"video", "audio"}:
+    elif audio_urgente:
         prioridad = 2
-    else:
+    else:                                              # solo video, o solo audio no urgente (choque, voces elevadas)
         prioridad = 3 if base.confianza < 0.80 else 2
 
     conf = sum(d.confianza for d in cercanas) / len(cercanas)

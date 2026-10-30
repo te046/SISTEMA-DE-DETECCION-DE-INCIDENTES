@@ -31,6 +31,21 @@ class Decision:
     motivo: str
 
 
+def cerrar_con_coordinador(coordinador, e: "EventoPendiente", zona: str, decidir) -> bool:
+    """Al cerrar un evento: fusiona con todo lo detectado en la zona (audio y video) y evita duplicados.
+    Devuelve False si otro evento de la zona ya emitió la alerta de este incidente."""
+    if coordinador is None:
+        return True
+    alerta = fusionar(coordinador.en_ventana(zona, e.t_evento))
+    if alerta:
+        e.alerta = alerta
+    if not coordinador.reclamar(zona, e.t_evento):
+        decidir(e.t_evento, e.alerta["tipo"].lower(), e.alerta["confianza"], "-", False,
+                "ya cubierto por otra alerta de la misma zona e instante")
+        return False
+    return True
+
+
 @dataclass
 class EventoPendiente:
     alerta: dict
@@ -54,6 +69,7 @@ class Detector:
     enfriamiento_s: float = 8.0      # no repetir la misma clase en la misma zona dentro de este lapso
     reloj: Callable[[], float] = time.time
     observador: Callable[[np.ndarray, float], None] | None = None   # --diagnostico: ve cada ventana ya clasificada
+    coordinador: object = None       # Coordinador de zona (audio + video); None = solo audio, como antes
     _siguiente: int = 0
     _ultima_por_clase: dict = field(default_factory=dict)
     pendientes: list = field(default_factory=list)
@@ -84,6 +100,9 @@ class Detector:
         if not resultados:                              # ninguna clase del mapeo llegó al umbral del clasificador
             return
         detecciones = [Deteccion("audio", clase, conf, self.nombre_audio, self.zona, t) for clase, conf, _ in resultados]
+        if self.coordinador is not None:
+            for d in detecciones:
+                self.coordinador.registrar(d)
         alerta = fusionar(detecciones)
         umbral_fusion = umbral_de_fusion()
         if not alerta:
@@ -119,7 +138,7 @@ class Detector:
         ahora = self.reloj()
         listos = [e for e in self.pendientes if ahora >= e.listo_en]
         self.pendientes = [e for e in self.pendientes if ahora < e.listo_en]
-        return listos
+        return [e for e in listos if cerrar_con_coordinador(self.coordinador, e, self.zona, self._decidir)]
 
     def clips(self, e: EventoPendiente) -> tuple[np.ndarray, list]:
         desde, hasta = e.t_evento - self.pre_s, e.listo_en

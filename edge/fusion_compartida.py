@@ -20,4 +20,10 @@ def umbral_de_fusion() -> float:
     return _fusion.UMBRAL_MINIMO
 
 
-__all__ = ["Deteccion", "fusionar", "umbral_de_fusion", "enmascarar_texto", "enmascarar_url"]
+def fijar_umbral_fusion(valor: str) -> float:
+    """PROVISIONAL (--umbral-fusion): solo para demostraciones, mismas validaciones que VIGILANCIA_UMBRAL_FUSION."""
+    _fusion.UMBRAL_MINIMO = _fusion.umbral_desde_entorno(valor)
+    return _fusion.UMBRAL_MINIMO
+
+
+__all__ = ["Deteccion", "fusionar", "umbral_de_fusion", "fijar_umbral_fusion", "enmascarar_texto", "enmascarar_url"]

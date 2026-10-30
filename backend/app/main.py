@@ -26,6 +26,9 @@ app = FastAPI(title="Vigilancia multimodal UDH · API", version="1.0.0", lifespa
 bearer = HTTPBearer(auto_error=False)
 
 
+TOLERANCIA_RELOJ_S = 2.0      # desfase admitido entre el reloj del edge y el del servidor
+
+
 def ahora() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -134,8 +137,12 @@ def crear_alerta(a: AlertaNueva):
         error(422, "La alerta no trae ninguna clasificación de modelo.", "Envíe al menos una modalidad (video o audio) con su clase y confianza (RN-01).")
     gen = ahora()
     det = a.detectado_en or gen
-    if det.tzinfo is None:
-        det = det.replace(tzinfo=timezone.utc)
+    if det.tzinfo is None:                            # suponer una zona corrompería I1 (Perú está a −5 h de UTC)
+        error(422, "La hora del evento (detectado_en) no indica su zona horaria.",
+              "Envíela en UTC con zona, por ejemplo 2026-10-30T05:23:43.120+00:00.")
+    if (det - gen).total_seconds() > TOLERANCIA_RELOJ_S:
+        error(422, "La hora del evento (detectado_en) está en el futuro.",
+              "Sincronice el reloj del equipo de captura (Configuración › Hora › Sincronizar ahora).")
     with db.tx() as con:
         cur = con.execute(
             "INSERT INTO alertas(tipo,prioridad,dispositivos,zona,confianza,modalidades,origen,evidencia_video,evidencia_audio,detectado_en,generado_en)"

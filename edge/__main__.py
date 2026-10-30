@@ -37,7 +37,11 @@ def argumentos():
     ap.add_argument("--zona", default="Zona 1", help="modo manual: zona de las fuentes")
     ap.add_argument("--nombre-microfono", default="Micrófono de la laptop")
     ap.add_argument("--nombre-camara", default="Webcam de la laptop")
-    ap.add_argument("--umbral", type=float, default=0.5, help="confianza mínima del modelo de audio (0–1)")
+    ap.add_argument("--umbral", type=float, default=0.5,
+                    help="qué clases del audio son CANDIDATAS (0–1). No basta para alertar: ver --umbral-fusion")
+    ap.add_argument("--umbral-fusion", default=None,
+                    help="PROVISIONAL, solo demostraciones: confianza mínima para ALERTAR (por defecto 0.50, "
+                         "o VIGILANCIA_UMBRAL_FUSION). No usar en mediciones de la tesis hasta calibrar")
     ap.add_argument("--fps", type=float, default=10.0, help="fotogramas por segundo que se guardan")
     ap.add_argument("--diagnostico", action="store_true",
                     help="muestra en consola, cada segundo, el nivel del micrófono y las 3 clases con mayor puntaje (no guarda audio)")
@@ -59,7 +63,15 @@ def preparar(a):
         crear_clasificador()                             # verifica el modelo antes de empezar
     except FileNotFoundError as e:
         sys.exit(str(e))
-    from .fusion_compartida import umbral_de_fusion
+    from .fusion_compartida import fijar_umbral_fusion, umbral_de_fusion
+    if a.umbral_fusion is not None:
+        try:
+            fijar_umbral_fusion(a.umbral_fusion)
+        except ValueError as e:
+            sys.exit(str(e).replace("VIGILANCIA_UMBRAL_FUSION", "--umbral-fusion"))
+    if abs(umbral_de_fusion() - 0.50) > 1e-9:
+        log.warning("UMBRAL DE FUSIÓN PROVISIONAL = %.2f (por defecto 0.50). Solo para demostraciones: "
+                    "estas alertas no sirven como medición de la tesis hasta calibrar.", umbral_de_fusion())
     if a.umbral < umbral_de_fusion():
         log.warning("--umbral %.2f solo cambia qué clases son candidatas. La fusión exige %.2f para alertar: "
                     "por debajo verá «Decisión … sin alerta» en el registro, pero no alertas.", a.umbral, umbral_de_fusion())
@@ -108,7 +120,12 @@ def modo_panel(a):
     def abrir_video(fuente):
         return CapturaVideo(BufferVideo(segundos=15, fps=a.fps), fuente, fps=a.fps)
 
-    g = Gestor(cliente, abrir_audio, abrir_video, inventario, crear_clasificador=crear_clasificador)
+    def crear_clasificador_video():
+        from .clasificador_video import ClasificadorVideo
+        return ClasificadorVideo(umbral=a.umbral)
+
+    g = Gestor(cliente, abrir_audio, abrir_video, inventario, crear_clasificador=crear_clasificador,
+               crear_clasificador_video=crear_clasificador_video)
     g.observador = observador_diagnostico(a, lambda: g.clasificador)
     log.info("Modo panel: esperando las fuentes que se conecten en «Buscar dispositivos». API: %s. Ctrl+C para detener.", a.api)
     proxima_sync = proximo_latido = 0.0
@@ -136,9 +153,12 @@ def modo_panel(a):
 def modo_manual(a):
     from .buffers import BufferAudio, BufferVideo
     from .captura import CapturaAudio, CapturaVideo
+    from .coordinador import Coordinador
     from .detector import Detector
+    from .detector_video import MonitorVideo
 
     cliente, crear_clasificador = preparar(a)
+    coordinador = Coordinador()
     clasificador = crear_clasificador()
     sin_video = a.camara is None or a.camara.lower() == "ninguna"
     try:
@@ -154,7 +174,16 @@ def modo_manual(a):
         b_video = BufferVideo(segundos=15, fps=a.fps)
         cap_video = CapturaVideo(b_video, int(a.camara) if a.camara.isdigit() else a.camara, fps=a.fps)
     detector = Detector(clasificador, b_audio, b_video, a.zona, a.nombre_microfono, a.nombre_camara if cap_video else None,
-                        observador=observador_diagnostico(a, lambda: clasificador))
+                        observador=observador_diagnostico(a, lambda: clasificador), coordinador=coordinador)
+    detectores = [detector]
+    if cap_video:
+        try:
+            from .clasificador_video import ClasificadorVideo
+            monitor = MonitorVideo(ClasificadorVideo(umbral=a.umbral), b_video, a.zona, a.nombre_camara, coordinador, audio=b_audio)
+            monitor.iniciar()
+            detectores.append(monitor)
+        except FileNotFoundError as e:
+            log.warning("Sin modelo de video: la cámara solo graba evidencia. %s", e)
     detener = threading.Event()
 
     def latidos():                                      # RF-01/RNF-02: estado real de cada fuente cada 5 s
@@ -175,7 +204,7 @@ def modo_manual(a):
     ultimo_informe = time.time()
     try:
         while True:
-            entregar_listos([detector], cliente)
+            entregar_listos(detectores, cliente)
             if time.time() - ultimo_informe > 60:
                 log.info("Captura: audio %s · video %s", cap_audio.metricas, cap_video.metricas if cap_video else "sin cámara")
                 ultimo_informe = time.time()
@@ -184,6 +213,9 @@ def modo_manual(a):
         log.info("Deteniendo…")
     finally:
         detener.set()
+        for d in detectores:
+            if hasattr(d, "detener"):
+                d.detener()
         cap_audio.detener()
         if cap_video:
             cap_video.detener()

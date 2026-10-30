@@ -8,8 +8,11 @@ audio y de video) que el vigilante reproduce en el panel.
 Desde el panel, la pantalla **«Buscar dispositivos»** lista las cámaras y los micrófonos del equipo y permite
 conectarlos. También se pueden agregar cámaras IP o un teléfono por su dirección.
 
-**Aún no incluye:** el modelo de video (agresión física), la búsqueda automática de cámaras IP (ONVIF), la
-exportación para la tesis, la app de escritorio ni Docker. Los pendientes acordados están en `CLAUDE.md`.
+**Video: línea base.** El modelo de video («posible agresión», VideoMAE afinado con RWF-2000) es una **línea base**:
+no está calibrado con video del pabellón y **no tiene métricas medidas en este proyecto**.
+
+**Aún no incluye:** la búsqueda automática de cámaras IP (ONVIF), la exportación para la tesis, la app de
+escritorio ni Docker. Los pendientes acordados están en `CLAUDE.md`.
 
 ## Instalar (una sola vez, dentro de esta carpeta)
 1. Python 3.10 o superior.
@@ -66,8 +69,17 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
 ## Cómo funciona la detección (etapas 2 y 3)
 - **Audio:** 16 kHz mono, en ventanas de 1 s con paso de 0,5 s. Cada muestra guarda su hora real de captura,
   así `detectado_en` es el instante del evento y no el de la inferencia.
-- **Video:** cámara local (DirectShow) o URL, reducida a 640 px de ancho y muestreada a 10 fotogramas/s
-  (`--fps`). Por ahora solo sirve de evidencia: **todavía no hay modelo de video**.
+- **Video:** cámara local (DirectShow) o URL, reducida a 640 px de ancho y muestreada a 10 fotogramas/s (`--fps`).
+- **Modelo de video — LÍNEA BASE:** VideoMAE afinado con RWF-2000 (CC BY-NC 4.0). Cada 1 s clasifica los últimos
+  1,6 s (16 fotogramas) en un hilo aparte y da la probabilidad de «posible agresión».
+  - **Latencia medida** en la laptop de desarrollo (CPU, 16 núcleos lógicos): **~0,78 s por clip** (mediana; máx. 0,87 s).
+  - Licencia, revisión fija y SHA-256 en `edge/modelos/PROCEDENCIA.md`. **No hay métricas medidas**: la exactitud
+    de 0,73 que publica su autor no es un resultado de este proyecto. El panel lo marca como «Video: línea base».
+  - Se genera **una vez** en un entorno aparte, que no forma parte de la app (~870 MB):
+    `python -m venv .venv-export`, luego `.venv-export\Scripts\pip install --index-url https://download.pytorch.org/whl/cpu torch`
+    y `.venv-export\Scripts\pip install "transformers>=4.40,<5" safetensors onnx onnxruntime`, y después
+    `.venv-export\Scripts\python scripts\exportar_modelo_video.py`. Usa `safetensors` (nunca el `.bin`) y verifica el SHA-256.
+  - Sin el modelo, la cámara solo graba evidencia y el edge lo avisa una vez.
 - **Modelo de audio:** YAMNet preentrenado en AudioSet, como [conversión ONNX sin reentrenar](https://huggingface.co/audiomagic/yamnet-onnx)
   (Apache 2.0). Corre en CPU, unos 13 ms por ventana en la laptop de desarrollo, así que no necesita GPU.
   Las clases del diseño son grupos de clases de AudioSet (`edge/clasificador_audio.py`):
@@ -87,8 +99,18 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
   AudioSet) · umbral clasificador · umbral fusión → ALERTA | sin alerta: motivo`. Los motivos posibles son:
   bajo el umbral de la fusión, enfriamiento (misma clase hace menos de 8 s) o la alerta y su prioridad.
   Solo se escribe texto: no se guarda audio.
-- **Fusión y prioridad:** se reutiliza `backend/app/fusion.py`, la misma función que en la etapa 1. Una misma
-  clase no se repite en la misma zona antes de 8 s.
+- **Fusión y prioridad** (`backend/app/fusion.py`, regla aprobada el 30/10/2026):
+  - **Video y audio coinciden** (misma zona, ±3 s): **alta**, siempre.
+  - **Solo video:** **baja**, o **media** si la confianza es ≥ 0,80. Nunca alta.
+  - **Solo audio:** media si es urgente (vidrio, grito, disparo); si no, baja o media según la confianza.
+  - Un incidente genera **una sola** alerta: el coordinador de zona (`edge/coordinador.py`) junta audio y video,
+    y la segunda modalidad que llega se registra como «ya cubierto».
+  - Una misma clase no se repite en la misma zona antes de 8 s. RN-01 (sin clasificación de modelo no hay alerta)
+    y RN-02 (toda alerta confirmada se registra como incidente) siguen vigentes, con pruebas.
+- **Umbral de fusión PROVISIONAL:** para demostraciones, `--umbral-fusion 0.30` o `set VIGILANCIA_UMBRAL_FUSION=0.30`.
+  El edge avisa al arrancar. **No usar en las mediciones de la tesis** hasta calibrar; el valor por defecto es 0,50.
+- **Horas:** todas se guardan en UTC con zona (`…+00:00`); el panel las muestra en hora local, con la fecha si no
+  son de hoy. La API rechaza un `detectado_en` sin zona horaria o en el futuro (más de 2 s), porque corrompería I1.
 - **Evidencia:** 5 s antes del evento y 1,5 s después. Se guarda en WAV (audio) y WebM/VP8 (video), formatos
   que reproducen Chrome, Edge y WebView2. Se sube con la clave del edge (`POST /api/v1/evidencias`) y solo se
   ve con sesión iniciada (`GET /api/v1/evidencias/{archivo}`).
@@ -99,7 +121,8 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
 ## Probar
 - **Pruebas automáticas (no necesitan hardware):**
   - `cd backend && ..\.venv\Scripts\python -m pytest -q`
-  - `.venv\Scripts\python -m pytest edge/tests -q`
+  - `.venv\Scripts\python -m pytest edge/tests -q` (la prueba del modelo de video real se omite si no se exportó)
+  - Panel (horas en zona de Lima, sin dependencias): `set TZ=America/Lima&& node --test frontend/tests/tiempo.test.mjs`
 - **Sin cámaras:** `python scripts/simular.py --url http://127.0.0.1:<puerto> --cantidad 4` envía alertas
   marcadas como `simulado`. `python scripts/limpiar_simulados.py` las borra antes de medir con datos reales.
 - **Prueba guiada de audio (calibración):** `powershell -ExecutionPolicy Bypass -File scripts\prueba_audio.ps1 -Microfono 1`

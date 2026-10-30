@@ -211,3 +211,37 @@ def test_detector_del_gestor_procesa_audio():
     for k in range(20):
         buf.agregar(1000 + k * 0.1, np.zeros(1600, np.float32))
     assert g.detectores()[0].procesar() == 3
+
+
+def test_camara_conectada_crea_monitor_de_video_y_lo_detiene_al_desconectar():
+    from edge.detector_video import MonitorVideo
+
+    class VideoFalso:
+        umbral = 0.5
+        def probabilidad(self, fotos):
+            return 0.1
+    api, abiertas = ApiFalsa(), []
+    g = _gestor(api, abiertas)
+    g.crear_clasificador_video = VideoFalso
+    api.fuentes = [MIC, CAM]
+    g.sincronizar()
+    mon = g.activas[2].detector
+    assert isinstance(mon, MonitorVideo) and mon.audio is abiertas[0].buffer      # evidencia de audio de la zona
+    assert g.activas[1].detector.coordinador is mon.coordinador                   # mismo coordinador de zona
+    api.fuentes = [MIC]
+    g.sincronizar()
+    assert mon._detener.is_set()
+
+
+def test_sin_modelo_de_video_la_camara_solo_graba_y_avisa_una_vez(caplog):
+    api, abiertas = ApiFalsa(), []
+    g = _gestor(api, abiertas)
+    llamadas = []
+
+    def sin_modelo():
+        llamadas.append(1); raise FileNotFoundError("No está el modelo de video.")
+    g.crear_clasificador_video = sin_modelo
+    api.fuentes = [CAM, {**CAM, "id": 4, "clave": "camara:local:1", "nombre": "Cam 2"}]
+    g.sincronizar()
+    assert g.activas[2].detector is None and g.activas[4].detector is None and len(llamadas) == 1
+    assert caplog.text.count("Sin modelo de video") == 1

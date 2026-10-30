@@ -1,0 +1,22 @@
+{
+  "repositorio": "https://huggingface.co/lmazzon70/videomae-base-finetuned-kinetics-finetuned-rwf2000-epochs8-batch8-kb",
+  "revision": "bb28180b42bfa4d8b3a2e1c7a77d741ca7f7d7b8",
+  "nota_revision": "PR #2 (abierta, sin fusionar por el autor) creada por SFconvertbot: variante safetensors de pytorch_model.bin",
+  "licencia": "CC BY-NC 4.0 (declarada en la ficha del modelo)",
+  "base": "MCG-NJU/videomae-base-finetuned-kinetics",
+  "etiquetas": {
+    "0": "Fight",
+    "1": "NonFight"
+  },
+  "sha256": {
+    "model.safetensors": "083a6e539404103b1712c6dbf8aeca320043598269ac3ee6e6cfe2ccc5562021",
+    "config.json": "eb9d7bd1a1f9fe3f5a75bef9b226efd2ef3fbb69c3cd43bf01d086ba54789ed8",
+    "preprocessor_config.json": "2dad1f26b7123d6a7c5071a6098f63b43de668a5475b07ee9c7fa9071133f59f",
+    "videomae_rwf2000.onnx": "7642d868dfd6384220930847c42da621a97d5be6c7f52059dc0c848505c0d07b"
+  },
+  "exportado_con": {
+    "torch": "2.14.1+cpu",
+    "opset": 17
+  },
+  "diferencia_max_onnx_vs_pytorch": 2.4400651454925537e-07
+}

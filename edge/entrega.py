@@ -23,7 +23,8 @@ COLUMNAS = ["codigo", "tipo", "detectado_en", "generado_en", "inferencia_s", "es
 def entregar(e: EventoPendiente, detector: Detector, cliente, registro_csv: Path | None = None) -> dict:
     t_inicio_entrega = time.time()
     audio, fotos = detector.clips(e)
-    url_audio = cliente.subir("clip.wav", wav_bytes(audio, detector.audio.sr), "audio/wav") if audio.size else None
+    sr = detector.audio.sr if detector.audio is not None else 16000     # un evento de video puede no tener micrófono
+    url_audio = cliente.subir("clip.wav", wav_bytes(audio, sr), "audio/wav") if audio.size else None
     url_video = None
     if fotos:
         with tempfile.TemporaryDirectory() as tmp:

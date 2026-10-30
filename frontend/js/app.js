@@ -1,4 +1,5 @@
 import { api, archivo, ApiError, sesion, guardarSesion } from "./api.js";
+import { horaAlerta } from "./tiempo.js";
 
 const $app = document.getElementById("app");
 const PRIO = { 1: "Alta", 2: "Media", 3: "Baja" };
@@ -22,7 +23,7 @@ const ZONAS = ["Zona 1", "Zona 2", "Zona 3", "Zona 4"];
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (n) => (n === null || n === undefined ? "—" : String(n).replace(".", ",") + " %");
 const num = (n, u = "") => (n === null || n === undefined ? "—" : String(n).replace(".", ",") + u);
-const hora = (iso) => new Date(iso).toLocaleTimeString("es-PE", { hour12: false });
+const hora = (iso) => horaAlerta(iso);
 const lugar = (a) => `${a.dispositivos} · ${a.zona}`;
 
 const ICON = {
@@ -261,7 +262,8 @@ function vPanel() {
   const detalle = a ? `<div class="head"><h2>${esc(a.tipo)}</h2><span class="pill p${a.prioridad}">Prioridad ${PRIO[a.prioridad]}</span></div>
     <div class="lbl" style="padding:2px 24px 0">Alerta ${esc(a.codigo)} · ${esc(lugar(a))} · ${hora(a.generado_en)}${a.origen === "simulado" ? " · simulada" : ""}</div>
     <div class="body">${evidencia(a)}
-    <div class="facts"><div><span class="lbl">Confianza </span><strong>${Math.round(a.confianza * 100)} %</strong></div><div><span class="lbl">Detectada por </span><strong>${por}</strong></div></div>
+    <div class="facts"><div><span class="lbl">Confianza </span><strong>${Math.round(a.confianza * 100)} %</strong></div><div><span class="lbl">Detectada por </span><strong>${por}</strong></div>
+      ${mods.includes("video") ? '<div><span class="pill neutral" title="Modelo preentrenado sin calibrar con video del pabellón; sin métricas medidas.">Video: línea base</span></div>' : ""}</div>
     <div style="display:flex;flex-direction:column;gap:10px"><div class="actions"><button class="btn btn-primary" data-a="confirmar">Confirmar incidente</button><button class="btn btn-ghost" data-a="descartar">Descartar</button></div>
     <p class="lbl" style="margin:0">Se registra con fecha, hora, zona y tipo. Clics usados: ${S.clics + 1} de 3.</p></div></div>`
     : `<div class="empty lbl">${S.alertas.length ? "Elija una alerta de la lista para ver su evidencia." : "Cuando llegue una alerta, aparecerá aquí."}</div>`;

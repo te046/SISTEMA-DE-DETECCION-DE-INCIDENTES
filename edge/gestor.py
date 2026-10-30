@@ -9,8 +9,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from .coordinador import Coordinador
 from .descubrir import resolver_microfono
 from .detector import Detector
+from .detector_video import MonitorVideo
 from .fusion_compartida import enmascarar_texto
 
 log = logging.getLogger("edge.gestor")
@@ -23,7 +25,7 @@ class Activa:
     fuente: dict
     captura: object                     # CapturaAudio | CapturaVideo (o un doble en las pruebas)
     dispositivo_id: int | None
-    detector: Detector | None = None
+    detector: Detector | MonitorVideo | None = None    # audio: Detector · cámara: MonitorVideo (si hay modelo)
     informado: tuple | None = None      # último (ok, error) enviado, para no repetirlo
 
 
@@ -36,6 +38,10 @@ class Gestor:
     clasificador: object = None         # se crea al conectar el primer micrófono
     crear_clasificador: object = None
     observador: object = None           # --diagnostico
+    crear_clasificador_video: object = None             # None o sin modelo: la cámara solo graba evidencia
+    clasificador_video: object = None
+    coordinador: Coordinador = field(default_factory=Coordinador)
+    _sin_modelo_video: bool = False
     activas: dict = field(default_factory=dict)
     fallidas: dict = field(default_factory=dict)        # id -> actualizado_en con el que falló (no reintentar en bucle)
     _inv: dict | None = None
@@ -95,7 +101,11 @@ class Gestor:
         if f["tipo"] == "audio":
             if self.clasificador is None:
                 self.clasificador = self.crear_clasificador()
-            activa.detector = Detector(self.clasificador, captura.buffer, None, f["zona"], f["nombre"], observador=self.observador)
+            activa.detector = Detector(self.clasificador, captura.buffer, None, f["zona"], f["nombre"],
+                                       observador=self.observador, coordinador=self.coordinador)
+        elif self._modelo_video() is not None:
+            activa.detector = MonitorVideo(self.clasificador_video, captura.buffer, f["zona"], f["nombre"], self.coordinador)
+            activa.detector.iniciar()
         captura.iniciar()
         self.activas[f["id"]] = activa
         self.fallidas.pop(f["id"], None)
@@ -112,6 +122,8 @@ class Gestor:
     def cerrar(self, fid: int, informar_desconexion: bool = True) -> None:
         a = self.activas.pop(fid)
         a.captura.detener()
+        if isinstance(a.detector, MonitorVideo):
+            a.detector.detener()
         if informar_desconexion and a.dispositivo_id is not None:
             try:
                 self.cliente.latido(a.dispositivo_id, False)
@@ -123,14 +135,28 @@ class Gestor:
         for fid in list(self.activas):
             self.cerrar(fid)
 
+    def _modelo_video(self):
+        """Clasificador de video (línea base), creado una vez. Si falta el modelo, se avisa una sola vez."""
+        if self.clasificador_video is None and self.crear_clasificador_video and not self._sin_modelo_video:
+            try:
+                self.clasificador_video = self.crear_clasificador_video()
+            except FileNotFoundError as e:
+                self._sin_modelo_video = True
+                log.warning("Sin modelo de video: las cámaras solo graban evidencia. %s", e)
+        return self.clasificador_video
+
     def _enlazar_video(self) -> None:
-        """Cada micrófono usa como evidencia la cámara conectada de su misma zona (si hay)."""
+        """Evidencia cruzada por zona: el micrófono usa la cámara de su zona y la cámara usa el micrófono."""
         camaras = {a.fuente["zona"]: a for a in self.activas.values() if a.fuente["tipo"] == "camara"}
+        micros = {a.fuente["zona"]: a for a in self.activas.values() if a.fuente["tipo"] == "audio"}
         for a in self.activas.values():
-            if a.detector is not None:
+            if isinstance(a.detector, Detector):
                 cam = camaras.get(a.fuente["zona"])
                 a.detector.video = cam.captura.buffer if cam else None
                 a.detector.nombre_video = cam.fuente["nombre"] if cam else None
+            elif isinstance(a.detector, MonitorVideo):
+                mic = micros.get(a.fuente["zona"])
+                a.detector.audio = mic.captura.buffer if mic else None
 
     # ------------------------------------------------------------ estado, latidos y detección
     def informar_estados(self) -> None:
@@ -152,5 +178,5 @@ class Gestor:
                 except Exception as e:
                     log.warning("No se pudo enviar el latido: %s", enmascarar_texto(e))
 
-    def detectores(self) -> list[Detector]:
+    def detectores(self) -> list:
         return [a.detector for a in self.activas.values() if a.detector is not None]

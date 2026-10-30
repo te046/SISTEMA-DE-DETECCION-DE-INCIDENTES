@@ -6,3 +6,8 @@ __pycache__/
 edge/modelos/*.onnx
 edge/modelos/*.parcial
 .playwright-mcp/
+.venv-export/
+edge/modelos/**/*.safetensors
+edge/modelos/**/*.onnx
+edge/modelos/**/*.parcial
+edge/modelos/videomae_rwf2000/

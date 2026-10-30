@@ -63,3 +63,12 @@ def test_dispositivos_y_roles(client, auth):
     r = client.patch(f"/api/v1/dispositivos/{disp[0]['id']}", json={"activo": False}, headers=auth)
     assert r.status_code == 200 and r.json()["activo"] == 0
     client.patch(f"/api/v1/dispositivos/{disp[0]['id']}", json={"activo": True}, headers=auth)
+
+
+def test_rn01_y_rn02_siguen_vigentes_con_la_regla_nueva(client, auth):
+    sin_modelo = client.post("/api/v1/alertas", json=alerta_base(modalidades=[]), headers=INGEST)
+    assert sin_modelo.status_code == 422                                        # RN-01
+    mm = [{"modalidad": "audio", "clase": "voces elevadas", "confianza": 0.6}, {"modalidad": "video", "clase": "posible agresión", "confianza": 0.55}]
+    a = client.post("/api/v1/alertas", json=alerta_base(prioridad=1, tipo="Voces elevadas", modalidades=mm), headers=INGEST).json()
+    client.post(f"/api/v1/alertas/{a['id']}/resolucion", json={"accion": "confirmar", "clics": 1}, headers=auth)
+    assert any(i["alerta"] == a["codigo"] for i in client.get("/api/v1/incidentes", headers=auth).json())   # RN-02

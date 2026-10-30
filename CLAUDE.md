@@ -61,6 +61,15 @@ Dockerfile + `docker-compose` (API, proxy Caddy con HTTPS, PostgreSQL), variable
   Contexto: con `python -m edge --microfono 1 --diagnostico` el micrófono Intel Smart Sound de la laptop entregó
   muchos tramos de −90 dBFS exactos y ninguna clase del mapeo; la causa (¿supresión de ruido de Windows?) no está probada.
   La ruta WDM-KS (sin efectos de Windows) también queda pendiente.
+- **Regla de persistencia (propuesta, NO aplicada):** alertar solo si la clase supera el umbral de la fusión en
+  k = 2 ventanas seguidas (paso 0,5 s; suma ~0,5 s a I1). Para clases impulsivas (vidrio, disparo, choque) evaluar
+  también «2 de 3». Evaluación: elegir k ∈ {1, 2, 3, 2 de 3} solo con el conjunto de calibración; informar en el de
+  evaluación precisión, recall, F1 y falsas alarmas por hora (audio ambiente) por clase, e I1, con y sin la regla.
+- **Umbral de fusión provisional:** `VIGILANCIA_UMBRAL_FUSION` / `--umbral-fusion` existen solo para demostraciones.
+  Las mediciones de la tesis usan 0,50 hasta calibrar.
+- **Video (línea base):** VideoMAE RWF-2000 (CC BY-NC 4.0, procedencia en `edge/modelos/PROCEDENCIA.md`). Medir
+  precisión/recall con grabaciones de prueba etiquetadas antes de declarar cualquier métrica; la exactitud del autor
+  (0,73) no es un resultado del proyecto.
 - **Cámaras IP automáticas:** búsqueda ONVIF/WS-Discovery de cámaras en la red local. Hoy se agregan a mano en
   «Buscar dispositivos» (dirección validada y cifrada).
 - **Webcam local:** en la laptop de Teo no se detecta (permiso de Windows, obturador u otra app). Ese camino solo
