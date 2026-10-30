@@ -72,3 +72,10 @@ def test_rn01_y_rn02_siguen_vigentes_con_la_regla_nueva(client, auth):
     a = client.post("/api/v1/alertas", json=alerta_base(prioridad=1, tipo="Voces elevadas", modalidades=mm), headers=INGEST).json()
     client.post(f"/api/v1/alertas/{a['id']}/resolucion", json={"accion": "confirmar", "clics": 1}, headers=auth)
     assert any(i["alerta"] == a["codigo"] for i in client.get("/api/v1/incidentes", headers=auth).json())   # RN-02
+
+
+def test_la_api_no_recibe_el_cache_control_del_panel():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    r = TestClient(app).get("/api/v1/salud")
+    assert r.headers.get("cache-control") is None                 # la API no se toca

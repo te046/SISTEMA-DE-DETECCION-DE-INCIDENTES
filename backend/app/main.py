@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import jwt as pyjwt
 
-from . import config, db, fuentes, security
+from . import config, db, fuentes, medicion, security
 
 from contextlib import asynccontextmanager
 
@@ -371,6 +371,16 @@ def salud():
 
 
 fuentes.registrar(app, usuario_actual, requiere_ingesta, error)   # «Buscar dispositivos» y canal del edge
+medicion.registrar(app, usuario_actual, error, fuentes._auditar)   # etiquetado, precisión/recall/F1 y CSV
+
+@app.middleware("http")
+async def panel_sin_cache_vieja(request, call_next):
+    """El panel se revalida siempre (ETag): tras una actualización no quedan módulos JS viejos en caché."""
+    r = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        r.headers.setdefault("Cache-Control", "no-cache")
+    return r
+
 
 # El panel web se sirve desde el mismo servidor (carpeta frontend/).
 if config.FRONTEND_DIR.exists():

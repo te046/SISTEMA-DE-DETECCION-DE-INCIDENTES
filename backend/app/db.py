@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS inventario_edge (
   busqueda_pedida_en TEXT,
   edge_visto_en TEXT                   -- última consulta del edge (para saber si está abierto)
 );
+CREATE TABLE IF NOT EXISTS eventos_reales (   -- verdad de campo: lo que REALMENTE ocurrió (para el recall)
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  inicio TEXT NOT NULL, fin TEXT NOT NULL,   -- UTC con zona
+  zona TEXT NOT NULL, tipo TEXT NOT NULL, nota TEXT,
+  registrado_por TEXT NOT NULL, registrado_en TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   momento TEXT NOT NULL, usuario TEXT, accion TEXT NOT NULL, detalle TEXT
@@ -98,6 +104,9 @@ def tx():
 MIGRACIONES = [   # (tabla, columna, definición): se agregan solo si faltan; nunca se borran datos
     ("alertas", "mostrado_en", "TEXT"),   # hora del SERVIDOR al recibir el aviso del panel (para «I1 visible»)
     ("alertas", "panel_activo", "INTEGER"),   # 1 si el panel estaba consultando cuando llegó la alerta; NULL = sin dato (alertas antiguas)
+    ("alertas", "verdad", "TEXT"),            # verdad de campo: 'real' | 'falsa' | NULL (sin etiquetar)
+    ("alertas", "etiquetado_por", "TEXT"),
+    ("alertas", "etiquetado_en", "TEXT"),
 ]
 
 

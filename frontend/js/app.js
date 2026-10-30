@@ -1,4 +1,4 @@
-import { api, archivo, ApiError, sesion, guardarSesion } from "./api.js";
+import { api, archivo, descargar, ApiError, sesion, guardarSesion } from "./api.js";
 import { horaAlerta } from "./tiempo.js";
 
 const $app = document.getElementById("app");
@@ -19,6 +19,8 @@ const S = {
   red: { nombre: "", clase: "ip", direccion: "", usuario: "", zona: "Zona 1" },   // sin clave: se lee del campo al guardar
 };
 const ZONAS = ["Zona 1", "Zona 2", "Zona 3", "Zona 4"];
+const TIPOS_EVENTO = ["grito", "rotura de vidrio", "choque", "disparo", "voces elevadas", "posible agresión", "otro"];
+Object.assign(S, { med: null, origenExp: "", errEvento: "", evento: { inicio: "", fin: "", zona: "Zona 1", tipo: "posible agresión", nota: "" } });
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (n) => (n === null || n === undefined ? "—" : String(n).replace(".", ",") + " %");
@@ -34,6 +36,7 @@ const ICON = {
   buscar: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   camara: '<path d="M15 10l5-3v10l-5-3"/><rect x="3" y="6" width="12" height="12" rx="2"/>',
   audio: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
+  medicion: '<path d="M9 11l3 3 8-8"/><path d="M4 4h10"/><path d="M4 9h5"/><path d="M4 14h5"/><path d="M4 19h16"/>',
 };
 const svg = (k) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
@@ -130,6 +133,7 @@ async function ir(p) {
     if (p === "indicadores") S.ind = await llamar("/indicadores");
     if (p === "estado") S.devs = await llamar("/dispositivos");
     if (p === "dispositivos") S.fuentes = await llamar("/fuentes");
+    if (p === "medicion") await cargarMedicion();
     if (p === "panel") await cargarPanel();
   } catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
   render();
@@ -181,6 +185,48 @@ async function agregarRed() {
   S.ocupado = null; render();
 }
 
+// ---------------------------------------------------------------- medición: etiquetado, eventos reales y CSV
+async function cargarMedicion() {
+  const [metricas, eventos, alertas] = await Promise.all([
+    llamar("/metricas" + (S.origenExp ? "?origen=" + S.origenExp : "")), llamar("/eventos-reales"), llamar("/alertas"),
+  ]);
+  alertas.sort((a, b) => (a.generado_en < b.generado_en ? 1 : -1));
+  S.med = { metricas, eventos, alertas: alertas.filter((a) => !S.origenExp || a.origen === S.origenExp).slice(0, 60) };
+}
+
+async function accionMedicion(fn, texto) {
+  try { await fn(); await cargarMedicion(); if (texto) msg(texto, "ok"); else S.msg = null; }
+  catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
+  render();
+}
+
+const etiquetar = (id, verdad) => accionMedicion(() => llamar(`/alertas/${id}/verdad`, { metodo: "PUT", cuerpo: { verdad } }));
+
+function aIso(local) { const d = new Date(local); return Number.isNaN(d.getTime()) ? null : d.toISOString(); }   // hora local → UTC con zona
+
+async function crearEvento() {
+  const e = S.evento, inicio = aIso(e.inicio), fin = aIso(e.fin);
+  if (!inicio || !fin) { S.errEvento = "Indique la hora de inicio y de fin del evento."; return render(); }
+  if (fin < inicio) { S.errEvento = "El fin no puede ser anterior al inicio."; return render(); }
+  S.errEvento = "";
+  await accionMedicion(() => llamar("/eventos-reales", { metodo: "POST", cuerpo: { inicio, fin, zona: e.zona, tipo: e.tipo, nota: e.nota || null } }),
+    "Evento real registrado.");
+  S.evento = { ...S.evento, inicio: "", fin: "", nota: "" }; render();
+}
+
+function borrarEvento(id) {
+  if (!window.confirm("¿Borrar este evento real? Se quitará del cálculo del recall.")) return;
+  accionMedicion(() => llamar(`/eventos-reales/${id}`, { metodo: "DELETE" }), "Evento borrado.");
+}
+
+async function exportar(tipo) {
+  const ruta = tipo === "alertas" ? "/exportar/alertas.csv" + (S.origenExp ? "?origen=" + S.origenExp : "") : "/exportar/eventos_reales.csv";
+  const nombre = (tipo === "alertas" ? `alertas_${S.origenExp || "todas"}` : "eventos_reales") + `_${new Date().toISOString().slice(0, 10)}.csv`;
+  try { await descargar(ruta, S.ses?.token, nombre); msg(`Exportado: ${nombre}`, "ok"); }
+  catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
+  render();
+}
+
 async function alternarDispositivo(id, activo) {
   try { await llamar(`/dispositivos/${id}`, { metodo: "PATCH", cuerpo: { activo } }); S.devs = await llamar("/dispositivos"); S.msg = null; }
   catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
@@ -222,7 +268,7 @@ function vShell(titulo, contenido) {
   const ini = u.nombre.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return `<aside class="side"><img src="logo-udh.png" alt="Universidad de Huánuco">
     <div><div style="font-weight:800;font-size:18px;line-height:1.25">Vigilancia multimodal</div><div class="lbl">Segundo pabellón</div></div>
-    <nav aria-label="Menú principal">${nav("panel", "Alertas", "alertas", n ? `<span class="badge">${n}</span>` : "")}${nav("incidentes", "Incidentes", "incidentes")}${nav("indicadores", "Indicadores", "indicadores")}${nav("estado", "Estado del sistema", "estado")}${nav("dispositivos", "Buscar dispositivos", "buscar")}</nav>
+    <nav aria-label="Menú principal">${nav("panel", "Alertas", "alertas", n ? `<span class="badge">${n}</span>` : "")}${nav("incidentes", "Incidentes", "incidentes")}${nav("indicadores", "Indicadores", "indicadores")}${nav("estado", "Estado del sistema", "estado")}${nav("dispositivos", "Buscar dispositivos", "buscar")}${nav("medicion", "Medición", "medicion")}</nav>
     <div class="note"><b>Sistema v1.0</b><span class="lbl">Las alertas «simuladas» se marcan como tales.</span></div></aside>
     <div class="wrap">
     <header class="topbar"><p class="lbl" style="margin:0">Inicio › ${esc(titulo)}</p>
@@ -390,11 +436,57 @@ function vDispositivos() {
     ${puede ? "" : '<p class="lbl" style="margin:0">Solo responsables y administradores pueden conectar dispositivos.</p>'}</section>`;
 }
 
+function vMedicion() {
+  const d = S.med || { metricas: {}, eventos: [], alertas: [] }, m = d.metricas || {};
+  const puede = S.ses.usuario.rol !== "vigilante";
+  const opZona = (sel) => ZONAS.map((z) => `<option ${z === sel ? "selected" : ""}>${z}</option>`).join("");
+  const verdad = { real: ["ok", "● Real"], falsa: ["off", "▲ Falsa"] };
+  const filasAlertas = d.alertas.map((a) => {
+    const [c, t] = verdad[a.verdad] || ["neutral", "○ Sin etiqueta"];
+    const btn = (v, txt) => `<button class="btn ${a.verdad === v ? "btn-primary" : "btn-ghost"} btn-s" data-verdad="${v ?? ""}" data-id="${a.id}" aria-pressed="${a.verdad === v}">${txt}</button>`;
+    return `<tr><td style="font-weight:700">${esc(a.codigo)}</td><td>${esc(a.tipo)}</td><td>${esc(a.zona)}</td><td>${hora(a.detectado_en)}</td>
+      <td>${esc(a.origen)}</td><td><span class="pill ${c}">${t}</span></td>
+      <td>${puede ? `<div class="acc-fila">${btn("real", "Real")}${btn("falsa", "Falsa")}${a.verdad ? btn(null, "Quitar") : ""}</div>` : '<span class="lbl">Solo responsables</span>'}</td></tr>`;
+  }).join("");
+  const filasEventos = d.eventos.map((e) => `<tr><td>${hora(e.inicio)} – ${hora(e.fin)}</td><td>${esc(e.zona)}</td><td>${esc(e.tipo)}</td><td>${esc(e.nota || "")}</td>
+      <td>${puede ? `<button class="btn btn-ghost btn-s" data-borrar-evento="${e.id}">Borrar</button>` : ""}</td></tr>`).join("");
+  const ev = S.evento;
+  const kpi = (t, v, extra) => `<div class="card kpi"><div class="lbl">${t}</div><div class="n">${v}</div><div class="lbl" style="margin-top:10px">${extra}</div></div>`;
+  return `<section style="display:flex;flex-direction:column;gap:20px">
+    <div class="dev-top"><div><h1 class="h-title">Medición</h1><p class="lbl h-sub">Verdad de campo, métricas y exportación para la tesis</p></div>
+      <div class="dev-acc"><div class="field"><label for="origen-exp">Alertas</label><select id="origen-exp">
+        <option value="" ${!S.origenExp ? "selected" : ""}>Todas</option><option value="edge" ${S.origenExp === "edge" ? "selected" : ""}>Reales (edge)</option>
+        <option value="simulado" ${S.origenExp === "simulado" ? "selected" : ""}>Simuladas</option></select></div>
+        <button class="btn btn-primary" data-exportar="alertas">Exportar alertas (CSV)</button>
+        <button class="btn btn-ghost" data-exportar="eventos">Exportar eventos reales (CSV)</button></div></div>
+    <div class="kpis">
+      ${kpi("Precisión etiquetada", pct(m.precision_etiquetada_pct), `${m.alertas_reales ?? 0} reales de ${m.alertas_etiquetadas ?? 0} etiquetadas · ${m.alertas_sin_etiqueta ?? 0} sin etiqueta`)}
+      ${kpi("Recall", pct(m.recall_pct), `${m.eventos_detectados ?? 0} de ${m.eventos_reales ?? 0} eventos reales con alerta`)}
+      ${kpi("F1", pct(m.f1_pct), "Media armónica de precisión y recall")}
+    </div>
+    <p class="lbl" style="margin:0">Solo se calculan con alertas etiquetadas y eventos reales registrados (${esc(m.regla_emparejamiento || "")}). Son métricas de la tesis solo con un conjunto de prueba suficiente; I3 e I4 siguen usando la decisión del vigilante.</p>
+    <div class="card dev-list"><h2>Alertas por etiquetar</h2><p class="lbl" style="margin:0">¿Ocurrió de verdad lo que avisó la alerta? Últimas 60.</p>
+      ${d.alertas.length ? `<div class="tw"><table style="min-width:760px"><caption class="sr">Alertas y su etiqueta de verdad de campo</caption><thead><tr><th scope="col">Alerta</th><th scope="col">Tipo</th><th scope="col">Zona</th><th scope="col">Detectada</th><th scope="col">Origen</th><th scope="col">Etiqueta</th><th scope="col">Acción</th></tr></thead><tbody>${filasAlertas}</tbody></table></div>`
+        : '<p class="lbl" style="margin:0">Aún no hay alertas.</p>'}</div>
+    <div class="card dev-list"><h2>Eventos reales</h2><p class="lbl" style="margin:0">Lo que de verdad ocurrió (por ejemplo, la cronología de la prueba en vivo). Sirve para el recall.</p>
+      ${puede ? `<form class="dev-form" id="f-evento" novalidate>
+        <div class="field"><label for="ev-ini">Inicio</label><input id="ev-ini" type="datetime-local" step="1" value="${esc(ev.inicio)}"></div>
+        <div class="field"><label for="ev-fin">Fin</label><input id="ev-fin" type="datetime-local" step="1" value="${esc(ev.fin)}"></div>
+        <div class="field"><label for="ev-zona">Zona</label><select id="ev-zona">${opZona(ev.zona)}</select></div>
+        <div class="field"><label for="ev-tipo">Tipo</label><select id="ev-tipo">${TIPOS_EVENTO.map((t) => `<option ${t === ev.tipo ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div class="field wide"><label for="ev-nota">Nota <span class="lbl">(opcional)</span></label><input id="ev-nota" type="text" value="${esc(ev.nota)}" placeholder="Prueba en vivo, tramo 35–50 s"></div>
+        ${S.errEvento ? `<div role="alert" class="err-box wide"><strong>No se registró.</strong> ${esc(S.errEvento)}</div>` : ""}
+        <div class="wide"><button type="submit" class="btn btn-primary">Registrar evento real</button></div></form>` : ""}
+      ${d.eventos.length ? `<div class="tw"><table style="min-width:600px"><caption class="sr">Eventos reales registrados</caption><thead><tr><th scope="col">Hora</th><th scope="col">Zona</th><th scope="col">Tipo</th><th scope="col">Nota</th><th scope="col">Acción</th></tr></thead><tbody>${filasEventos}</tbody></table></div>`
+        : '<p class="lbl" style="margin:0">Aún no hay eventos reales registrados.</p>'}</div>
+  </section>`;
+}
+
 function render() {
   const foco = document.activeElement?.id;
   if (!S.ses) { $app.innerHTML = vLogin(); enlazarLogin(); if (foco) document.getElementById(foco)?.focus(); return; }
   if (S.cargando) { $app.innerHTML = '<div class="wrap"><main id="contenido"><section class="card empty" aria-busy="true"><div class="spinner" aria-hidden="true"></div><b>Cargando alertas del turno…</b><span class="lbl">Conectando con el servidor.</span></section></main></div>'; return; }
-  const v = { panel: ["Alertas", vPanel], incidentes: ["Incidentes", vIncidentes], indicadores: ["Indicadores", vIndicadores], estado: ["Estado del sistema", vEstado], dispositivos: ["Buscar dispositivos", vDispositivos] }[S.pantalla];
+  const v = { panel: ["Alertas", vPanel], incidentes: ["Incidentes", vIncidentes], indicadores: ["Indicadores", vIndicadores], estado: ["Estado del sistema", vEstado], dispositivos: ["Buscar dispositivos", vDispositivos], medicion: ["Medición", vMedicion] }[S.pantalla];
   $app.innerHTML = vShell(v[0], v[1]()) + '<div id="anuncio" class="sr" role="status" aria-live="polite"></div>';
   enlazar();
 }
@@ -428,6 +520,14 @@ function enlazar() {
   vincular("red-clase", (v) => (S.red.clase = v), "change");
   vincular("red-zona", (v) => (S.red.zona = v), "change");
   document.getElementById("f-red")?.addEventListener("submit", (e) => { e.preventDefault(); agregarRed(); });
+  $app.querySelectorAll("[data-verdad]").forEach((b) => b.addEventListener("click", () => etiquetar(Number(b.dataset.id), b.dataset.verdad || null)));
+  $app.querySelectorAll("[data-borrar-evento]").forEach((b) => b.addEventListener("click", () => borrarEvento(Number(b.dataset.borrarEvento))));
+  $app.querySelectorAll("[data-exportar]").forEach((b) => b.addEventListener("click", () => exportar(b.dataset.exportar)));
+  vincular("origen-exp", async (v) => { S.origenExp = v; try { await cargarMedicion(); } catch (e) { msg(e.message, "err"); } render(); }, "change");
+  vincular("ev-ini", (v) => (S.evento.inicio = v)); vincular("ev-fin", (v) => (S.evento.fin = v));
+  vincular("ev-zona", (v) => (S.evento.zona = v), "change"); vincular("ev-tipo", (v) => (S.evento.tipo = v), "change");
+  vincular("ev-nota", (v) => (S.evento.nota = v));
+  document.getElementById("f-evento")?.addEventListener("submit", (e) => { e.preventDefault(); crearEvento(); });
   const acc = { buscar: buscarDispositivos, confirmar: () => resolver("confirmar"), descartar: () => resolver("descartar"), deshacer, salir: () => cerrarSesion(), "cerrar-msg": () => { S.msg = null; render(); }, ayuda: () => { S.ayuda = !S.ayuda; if (S.pantalla !== "panel") S.pantalla = "panel"; render(); } };
   $app.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", acc[b.dataset.a]));
 }

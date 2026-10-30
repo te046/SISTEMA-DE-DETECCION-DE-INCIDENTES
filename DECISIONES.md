@@ -40,3 +40,17 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
   (por usuario, sin administrador, conserva los datos al desinstalar) y `instalador\compilar_instalador.ps1`;
   alternativa sin instalador: `scripts\crear_accesos_directos.ps1`.
 - **Descargas en la ventana:** `ALLOW_DOWNLOADS` activado para poder exportar CSV desde la app.
+
+## c. Medición: etiquetado, eventos reales y CSV
+- **Dos verdades de campo separadas de I3/I4** (que siguen usando la decisión del vigilante): etiqueta «real/falsa»
+  por alerta (precisión etiquetada) y tabla `eventos_reales` con lo que de verdad ocurrió (recall).
+- **Regla de emparejamiento** evento↔alerta: misma zona y `detectado_en` entre inicio − 1 s y fin + 5 s (el +5 s cubre
+  el I1 objetivo). Está en `backend/app/medicion.py`, probada, y se muestra en la pantalla.
+- Sin datos no hay métrica: con denominador 0 se muestra «—», nunca 0 % inventado.
+- Etiquetar y registrar eventos: solo responsable y administrador; el vigilante solo ve.
+- **CSV:** UTF-8 con BOM (Excel lee las tildes) y celdas que empiezan por = + - @ prefijadas con «'» (evita
+  inyección de fórmulas). El I1 visible del CSV usa el mismo criterio que Indicadores (solo con panel abierto).
+- **Caché del panel:** el servidor envía `Cache-Control: no-cache` a los archivos del panel, para no quedar con un
+  `.js` viejo tras una actualización (ocurrió en la revisión de desarrollo con el navegador).
+- La pantalla se revisó con Playwright sobre datos temporales (revisión de desarrollo, no reemplaza la prueba
+  manual en la ventana de escritorio).

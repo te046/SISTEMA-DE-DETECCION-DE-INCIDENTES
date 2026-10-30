@@ -19,6 +19,16 @@ export async function archivo(ruta, token) {
   return URL.createObjectURL(await r.blob());
 }
 
+// Descarga un CSV protegido con la sesión (en la app de escritorio, Windows pregunta dónde guardarlo).
+export async function descargar(ruta, token, nombre) {
+  const r = await fetch("/api/v1" + ruta, { headers: { Authorization: "Bearer " + token } });
+  if (!r.ok) throw new ApiError(r.status, "No se pudo exportar.", "Vuelva a intentar. Si sigue igual, cierre sesión y vuelva a entrar.");
+  const url = URL.createObjectURL(await r.blob());
+  const a = Object.assign(document.createElement("a"), { href: url, download: nombre });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
 export async function api(ruta, { metodo = "GET", cuerpo, token } = {}) {
   const cab = { "Content-Type": "application/json" };
   if (token) cab.Authorization = "Bearer " + token;

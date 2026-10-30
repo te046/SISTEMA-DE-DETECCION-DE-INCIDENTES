@@ -124,3 +124,6 @@ ul.devs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .dev-form-pie{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .help ul{margin:8px 0 0;padding-left:22px}
 .spinner-s{width:18px;height:18px;margin:0}
+/* Medición */
+.acc-fila{display:flex;flex-wrap:wrap;gap:8px}
+input[type=datetime-local]{width:100%;padding:12px 14px;border:1px solid #B7CAC5;border-radius:12px;min-height:50px;background:#fff;font-family:inherit;font-size:16px;color:inherit}
