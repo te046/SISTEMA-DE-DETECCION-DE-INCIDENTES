@@ -95,6 +95,14 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
   - `.venv\Scripts\python -m pytest edge/tests -q`
 - **Sin cámaras:** `python scripts/simular.py --url http://127.0.0.1:<puerto> --cantidad 4` envía alertas
   marcadas como `simulado`. `python scripts/limpiar_simulados.py` las borra antes de medir con datos reales.
+- **Prueba guiada de audio (calibración):** `powershell -ExecutionPolicy Bypass -File scripts\prueba_audio.ps1 -Microfono 1`
+  - Comprueba que el puerto 8000 esté libre y abre Configuración › Sonido para apagar las «Mejoras de audio».
+  - Levanta la API y el edge en modo manual con `--diagnostico` y guía 90 s con una cronología fija: silencio,
+    voz, grito y vidrio desde el teléfono, y un grito propio.
+  - Al final cierra solo los procesos que abrió y deja un resumen en `%TEMP%\prueba_audio_<fecha>\resumen.txt`:
+    líneas en −90 dBFS, nivel máximo y líneas con nivel > −60 dBFS o con una clase del mapeo.
+  - Usa la carpeta `data/` real, igual que `run.py`. Sus resultados sirven para diagnosticar; **no son métricas
+    del modelo**.
 - **Con la laptop:** arranque `run.py` y `python -m edge`. Luego reproduzca cerca del micrófono, desde el
   teléfono y con volumen alto, un audio de prueba de vidrio rompiéndose o de un grito. Un aplauso **no**
   sirve: no es una de las clases del diseño.
