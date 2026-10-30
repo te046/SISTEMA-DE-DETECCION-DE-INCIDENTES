@@ -190,6 +190,7 @@ def main(argv=None) -> int:
 
     instancia = InstanciaUnica()
     if not instancia.adquirir():
+        log.warning("Segunda instancia: %s ya está abierto; esta no arranca ni abre puertos.", NOMBRE)
         aviso(f"{NOMBRE} ya está abierto. Use la ventana que ya está en la barra de tareas.")
         return 0
     sistema = Sistema(a.sesion, a.diagnostico)

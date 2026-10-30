@@ -5,11 +5,12 @@
 # Abre la app (instalada, o la de dist\, o desde el código), guía 90 s y al final cierra SOLO el proceso que abrió.
 # La app elige sola un puerto libre (nunca 8080, 8081 ni 8090). Las mediciones de I1 quedan en
 # %LOCALAPPDATA%\SistemaVigilanciaUDH\mediciones_latencia.csv; los clips, solo en ...\SistemaVigilanciaUDH\evidencias\.
-param([ValidateSet("prueba", "tesis")][string]$Sesion = "prueba")
+param([ValidateSet("prueba", "tesis")][string]$Sesion = "prueba",
+      [switch]$EnSeco)   # -EnSeco: solo arranque y cierre con datos TEMPORALES; sin captura ni preguntas
 $ErrorActionPreference = "Stop"
 $raiz = Split-Path $PSScriptRoot -Parent
-$datos = Join-Path $env:LOCALAPPDATA "SistemaVigilanciaUDH"
-$registro = Join-Path $datos "registrospp.log"
+$datos = if ($EnSeco) { Join-Path $env:TEMP ("prueba_vivo_seco_" + (Get-Date -Format "yyyyMMdd_HHmmss")) } else { Join-Path $env:LOCALAPPDATA "SistemaVigilanciaUDH" }
+$registro = Join-Path $datos "registros\app.log"
 $instalada = Join-Path $env:LOCALAPPDATA "Programs\SistemaVigilanciaUDH\SistemaVigilanciaUDH.exe"
 $empaquetada = Join-Path $raiz "dist\SistemaVigilanciaUDH\SistemaVigilanciaUDH.exe"
 if (Test-Path $instalada) { $ejecutable = $instalada; $argsApp = @() }
@@ -52,8 +53,9 @@ Write-Host "=== ANTES DE EMPEZAR: SEGURIDAD Y CONSENTIMIENTO ===" -ForegroundCol
 Write-Host "  - La 'pelea' es una SIMULACION COREOGRAFIADA y SIN CONTACTO: empujones al aire, brazos rápidos," -ForegroundColor Yellow
 Write-Host "    nadie toca a nadie ni golpea objetos. Lejos de muebles, vidrios y bordes. Paren ante cualquier molestia." -ForegroundColor Yellow
 Write-Host "  - Toda persona que salga en cámara debe haber dado su PERMISO para ser grabada." -ForegroundColor Yellow
-Write-Host "  - Grabe solo en un espacio autorizado. Los clips quedan en data\evidencias\ (datos sensibles)." -ForegroundColor Yellow
-if ((Read-Host "  Escribe 'acepto' para continuar") -ne "acepto") { Write-Host "Prueba cancelada. No se levantó nada." -ForegroundColor Red; exit 1 }
+Write-Host "  - Grabe solo en un espacio autorizado. Los clips quedan en la carpeta de datos de la app, subcarpeta evidencias\ (datos sensibles)." -ForegroundColor Yellow
+if ($EnSeco) { $argsApp += @("--datos", $datos); Write-Host "MODO EN SECO: datos temporales en $datos; no se conecta cámara ni micrófono." -ForegroundColor Cyan }
+elseif ((Read-Host "  Escribe 'acepto' para continuar") -ne "acepto") { Write-Host "Prueba cancelada. No se levantó nada." -ForegroundColor Red; exit 1 }
 
 try {
   Write-Host "Abriendo la aplicación de escritorio (sesión '$Sesion', diagnóstico)..." -ForegroundColor Green
@@ -66,6 +68,22 @@ try {
   }
   if (-not $ok) { throw "La aplicación no terminó de iniciar en 30 s. Revise $registro" }
 
+  if ($EnSeco) {
+    $url = (Get-Content (Join-Path $datos ".api_url") -Raw).Trim()
+    $salud = Invoke-RestMethod "$url/api/v1/salud" -TimeoutSec 5
+    $panel = (Invoke-WebRequest "$url/" -UseBasicParsing -TimeoutSec 5).StatusCode
+    Write-Host ("  La aplicación responde en {0}: salud={1}, panel HTTP {2}." -f $url, $salud.estado, $panel) -ForegroundColor Green
+    if ($salud.estado -ne "ok" -or $panel -ne 200) { throw "La aplicación arrancó pero no responde bien." }
+    # Cierre ordenado como el botón «X» (sin /F). En un primer inicio hay 2 ventanas (claves + principal).
+    for ($i = 0; $i -lt 3 -and -not $app.HasExited; $i++) { & taskkill /PID $app.Id 2>&1 | Out-Null; try { $app | Wait-Process -Timeout 10 } catch { } }
+    if (-not $app.HasExited) { throw "La aplicación no se cerró con el cierre ordenado." }
+    $finales = LineasNuevas
+    if (-not ($finales -match "Sistema detenido")) { throw "La aplicación se cerró sin registrar 'Sistema detenido'." }
+    Write-Host "  Cierre ordenado: 'Sistema detenido' registrado; el proceso terminó." -ForegroundColor Green
+    $script:secoOk = $true
+  }
+
+  if (-not $EnSeco) {
   Paso 1 "En la VENTANA de la aplicación inicie sesión con responsable.vigilancia (escriba usted la clave)."
   Write-Host "  Si es la primera vez, se abrió además la ventana 'Claves iniciales': anótelas antes de cerrarla." -ForegroundColor DarkGray
   Read-Host "  Enter cuando haya entrado"
@@ -101,6 +119,7 @@ try {
   Pregunta "¿Se reproducen el video y el audio de la evidencia?"
   Write-Host "  El 'I1 visible' (hasta que se pinta en el panel) se ve en la pantalla 'Indicadores'." -ForegroundColor DarkGray
   Read-Host "  Cierre la ventana de la aplicación y pulse Enter para ver el resumen"
+  }
 }
 catch { $falla = $true; Write-Host ("`nERROR: " + $_.Exception.Message) -ForegroundColor Red }
 finally {
@@ -117,6 +136,10 @@ if ($puerto -and (Get-NetTCPConnection -LocalPort $puerto -State Listen -ErrorAc
   Write-Host "Aviso: el puerto $puerto sigue ocupado." -ForegroundColor Yellow
 } elseif ($puerto) { Write-Host "Puerto $puerto libre. Los puertos 8080, 8081 y 8090 no se tocaron." -ForegroundColor Green }
 
+if ($EnSeco) {
+  if ($script:secoOk -and -not $falla) { Write-Host "PRUEBA EN SECO: OK (arranque, respuesta y cierre ordenado)." -ForegroundColor Green; exit 0 }
+  Write-Host "PRUEBA EN SECO: FALLÓ. Registro: $registro" -ForegroundColor Red; exit 1
+}
 $errLineas = LineasNuevas
 $decisiones = @($errLineas | Where-Object { $_ -match "Decisión" })
 $enviadas = @($errLineas | Where-Object { $_ -match "Alerta .* enviada" })

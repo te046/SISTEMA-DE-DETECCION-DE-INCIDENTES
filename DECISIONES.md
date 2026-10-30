@@ -65,3 +65,18 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
 ## e. Etapa 5 (Docker, Caddy, PostgreSQL)
 - **No se implementó** por tiempo: queda como trabajo futuro documentado (README «Trabajo futuro» y CLAUDE.md).
   Requiere además adaptar la base a PostgreSQL y mover `panel_activo` a la base (hoy en memoria).
+
+## Verificación en la laptop (30/10/2026, autorizada por Teo)
+- Accesos directos creados con `scripts\crear_accesos_directos.ps1` en el Escritorio y en el menú Inicio; apuntan a
+  `dist\SistemaVigilanciaUDH\SistemaVigilanciaUDH.exe` y usan su ícono (escudo UDH, comprobado extrayéndolo del .exe).
+- Modelo de video copiado con `scripts\instalar_modelo_video.ps1` (SHA-256 verificado) a
+  `%LOCALAPPDATA%\SistemaVigilanciaUDH\modelos`; la búsqueda del modelo de la app lo encuentra y lo carga. En esa
+  carpeta solo quedó `modelos` (la app no se ejecutó con los datos reales).
+- App empaquetada con datos TEMPORALES: responde (`/salud` ok, panel 200); la segunda instancia avisa, no abre puertos
+  y queda registrada («Segunda instancia…», línea agregada al registro para poder verificarlo sin el cuadro de diálogo).
+- Cierre ordenado con `taskkill` sin `/F` (equivale a la «X»): en un primer inicio hay dos ventanas (claves +
+  principal) y cerrar la de claves NO apaga la app (correcto). Tras cerrar la principal: «Sistema detenido», sin
+  procesos y con el puerto libre.
+- **Fallo corregido en `scripts\prueba_vivo.ps1`:** la ruta del registro tenía un carácter de control (`\a` → BEL) al
+  reescribir el script con Python; nunca habría encontrado el registro. Se revisaron todos los .ps1 y .iss: era el único.
+- `prueba_vivo.ps1 -EnSeco`: arranque, respuesta y cierre ordenado con datos temporales, sin captura; probado: OK.

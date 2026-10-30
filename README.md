@@ -111,6 +111,7 @@ Manual breve para el vigilante y para la sustentación: [`MANUAL.md`](MANUAL.md)
 
 ## Pruebas guiadas (usan la ventana de escritorio)
 - **En vivo con webcam y micrófono:** `powershell -ExecutionPolicy Bypass -File scripts\prueba_vivo.ps1` (o `-Sesion tesis`).
+  Con `-EnSeco` solo comprueba arranque, respuesta y cierre ordenado de la app con datos temporales (sin cámara ni micrófono).
   Pide aceptar: pelea **simulada, coreografiada, sin contacto** y con permiso de quien salga en cámara. Abre la app,
   guía 90 s (quieto, movimiento normal, pelea simulada con voces elevadas, pelea simulada en silencio), cierra solo el
   proceso que abrió y resume cronología, decisiones, alertas e I1. La cronología sirve para registrar los eventos reales.
