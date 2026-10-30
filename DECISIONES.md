@@ -19,3 +19,24 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
   en la etapa 5 (varios procesos) habría que guardarla en la base.
 - «I1 visible» se calcula solo con alertas `panel_activo = 1`. Las demás se informan aparte en Indicadores
   («N alertas llegaron con el panel cerrado»). Las alertas anteriores a la migración quedan como «sin dato».
+
+## b. Aplicación de escritorio
+- **Un solo proceso, sin procesos hijos:** ventana pywebview en el hilo principal; API (uvicorn) y edge en hilos.
+  Así «cerrar solo lo que levantó» es exacto: al cerrar la ventana se detienen ambos hilos y no queda nada vivo.
+- **Instancia única** con un mutex con nombre de Windows (`Local\SistemaVigilanciaUDH`); la segunda apertura avisa y sale.
+- **Puerto libre** desde 8000, saltando 8080, 8081 y 8090 aunque estén libres.
+- **Datos** en `%LOCALAPPDATA%\SistemaVigilanciaUDH` (registro en `registros\app.log`). El `data\` de desarrollo no se toca.
+- **Claves iniciales:** `seed.crear_cuentas()` las devuelve en memoria y la app las muestra en una ventana aparte
+  («Claves iniciales: guárdelas ahora»); no se imprimen ni se registran. La app no crea los dispositivos de ejemplo.
+- **Modelo de video NO empaquetado:** CC BY-NC y derivado de RWF-2000 (no redistribuir). La app lo busca en
+  `%LOCALAPPDATA%\SistemaVigilanciaUDH\modelos`; `scripts\instalar_modelo_video.ps1` lo copia verificando el SHA-256.
+  Sin él, las cámaras solo graban evidencia. YAMNet (Apache 2.0) sí va dentro del paquete.
+- **Ícono:** se recorta el escudo del logo (527×628 px, calidad suficiente: nítido a 256 px y reconocible a 32 px;
+  a 16 px pierde detalle, como todo escudo con lema) y se vuelve transparente solo el blanco del borde.
+- **Python 3.10.0 y PyInstaller:** 3.10.0 tiene un fallo en `dis` (bpo-45757) que hace caer a PyInstaller. No se
+  instaló otro Python (software del sistema): `scripts\construir_escritorio.py` aplica el arreglo oficial de 3.10.1
+  solo dentro de su proceso. Recomendación: actualizar a 3.10.x más reciente cuando Teo lo decida.
+- **Inno Setup no está instalado** (no se instala software del sistema): quedan `instalador\SistemaVigilanciaUDH.iss`
+  (por usuario, sin administrador, conserva los datos al desinstalar) y `instalador\compilar_instalador.ps1`;
+  alternativa sin instalador: `scripts\crear_accesos_directos.ps1`.
+- **Descargas en la ventana:** `ALLOW_DOWNLOADS` activado para poder exportar CSV desde la app.

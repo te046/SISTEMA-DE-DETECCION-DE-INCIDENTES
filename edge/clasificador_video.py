@@ -18,6 +18,18 @@ MEDIA = np.array([0.485, 0.456, 0.406], np.float32)          # preprocessor_conf
 DESV = np.array([0.229, 0.224, 0.225], np.float32)
 
 
+def ubicar_modelo() -> tuple[Path, Path]:
+    """(onnx, procedencia). Primero la carpeta de datos del usuario (la app instalada NO trae los pesos: no se
+    redistribuyen), luego la del proyecto (desarrollo)."""
+    import os
+    datos = os.environ.get("VIGILANCIA_DATA")
+    if datos:
+        carpeta = Path(datos) / "modelos"
+        if (carpeta / MODELO.name).exists() and (carpeta / PROCEDENCIA.name).exists():
+            return carpeta / MODELO.name, carpeta / PROCEDENCIA.name
+    return MODELO, PROCEDENCIA
+
+
 def muestrear(fotos: list, n: int = FOTOGRAMAS) -> list:
     """n fotogramas repartidos uniformemente en la ventana (repite si hay menos)."""
     if not fotos:
@@ -47,12 +59,15 @@ def probabilidad_pelea(logits: np.ndarray, indice_pelea: int) -> float:
 
 
 class ClasificadorVideo:
-    def __init__(self, umbral: float = 0.5, ruta: Path = MODELO):
+    def __init__(self, umbral: float = 0.5, ruta: Path | None = None):
         import onnxruntime as ort
+        ruta_auto, procedencia = ubicar_modelo()
+        ruta = ruta or ruta_auto
         if not ruta.exists():
-            raise FileNotFoundError("No está el modelo de video. Genérelo una vez con: "
-                                    ".venv-export\\Scripts\\python scripts\\exportar_modelo_video.py")
-        etiquetas = json.loads(PROCEDENCIA.read_text(encoding="utf-8"))["etiquetas"]
+            raise FileNotFoundError("No está el modelo de video. Genérelo una vez con "
+                                    ".venv-export\\Scripts\\python scripts\\exportar_modelo_video.py y, para la app "
+                                    "instalada, cópielo con scripts\\instalar_modelo_video.ps1")
+        etiquetas = json.loads(procedencia.read_text(encoding="utf-8"))["etiquetas"]
         self.indice_pelea = int(next(k for k, v in etiquetas.items() if v == "Fight"))
         self.sesion = ort.InferenceSession(str(ruta), providers=["CPUExecutionProvider"])
         self.umbral = umbral

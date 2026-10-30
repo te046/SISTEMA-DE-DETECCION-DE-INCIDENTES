@@ -1,0 +1,4 @@
+# Aplicación de escritorio (en el mismo .venv que backend y edge).
+pywebview>=5,<7            # ventana propia (WebView2 de Windows)
+pyinstaller>=6,<7          # empaquetado en dist\SistemaVigilanciaUDH (scripts\construir_escritorio.py)
+pillow>=10,<13             # genera el ícono .ico (scripts\generar_icono.py)

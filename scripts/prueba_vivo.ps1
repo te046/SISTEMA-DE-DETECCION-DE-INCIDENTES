@@ -1,32 +1,35 @@
-﻿# Prueba guiada EN VIVO con la webcam y el micrófono: movimiento normal y pelea SIMULADA (coreografiada, sin contacto).
+﻿# Prueba guiada EN VIVO con la webcam y el micrófono, usando la APLICACIÓN DE ESCRITORIO (no el navegador):
+# movimiento normal y pelea SIMULADA (coreografiada, sin contacto).
 #   powershell -ExecutionPolicy Bypass -File scripts\prueba_vivo.ps1                (sesión «prueba»)
 #   powershell -ExecutionPolicy Bypass -File scripts\prueba_vivo.ps1 -Sesion tesis  (solo con umbrales por defecto)
-# Levanta la API y el edge en un puerto libre, guía 90 s con cuenta regresiva y cierra SOLO los procesos que abrió.
-# Las mediciones de I1 quedan en data\mediciones_latencia.csv. Los registros de esta prueba (solo texto) van a %TEMP%;
-# el video y el audio de las alertas quedan únicamente en data\evidencias\.
+# Abre la app (instalada, o la de dist\, o desde el código), guía 90 s y al final cierra SOLO el proceso que abrió.
+# La app elige sola un puerto libre (nunca 8080, 8081 ni 8090). Las mediciones de I1 quedan en
+# %LOCALAPPDATA%\SistemaVigilanciaUDH\mediciones_latencia.csv; los clips, solo en ...\SistemaVigilanciaUDH\evidencias\.
 param([ValidateSet("prueba", "tesis")][string]$Sesion = "prueba")
 $ErrorActionPreference = "Stop"
 $raiz = Split-Path $PSScriptRoot -Parent
-$py = Join-Path $raiz ".venv\Scripts\python.exe"
-if (-not (Test-Path $py)) { Write-Host "No encuentro .venv en $raiz. Crea el entorno virtual del proyecto primero." -ForegroundColor Red; exit 1 }
-
-# Puerto libre desde el 8000, sin tocar los de otros proyectos (8080, 8081, 8090).
-$reservados = @(8080, 8081, 8090)
-$puerto = $null
-foreach ($p in 8000..8099) {
-  if ($reservados -contains $p) { continue }
-  if (-not (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)) { $puerto = $p; break }
+$datos = Join-Path $env:LOCALAPPDATA "SistemaVigilanciaUDH"
+$registro = Join-Path $datos "registrospp.log"
+$instalada = Join-Path $env:LOCALAPPDATA "Programs\SistemaVigilanciaUDH\SistemaVigilanciaUDH.exe"
+$empaquetada = Join-Path $raiz "dist\SistemaVigilanciaUDH\SistemaVigilanciaUDH.exe"
+if (Test-Path $instalada) { $ejecutable = $instalada; $argsApp = @() }
+elseif (Test-Path $empaquetada) { $ejecutable = $empaquetada; $argsApp = @() }
+else {
+  $ejecutable = Join-Path $raiz ".venv\Scripts\pythonw.exe"; $argsApp = @("-m", "escritorio")
+  if (-not (Test-Path $ejecutable)) { Write-Host "No encuentro la aplicación ni .venv. Instálela o construya dist\ primero." -ForegroundColor Red; exit 1 }
 }
-if (-not $puerto) { Write-Host "No hay puertos libres entre 8000 y 8099. No toco nada." -ForegroundColor Red; exit 1 }
-$base = "http://127.0.0.1:$puerto"
+if (Get-Process -Name "SistemaVigilanciaUDH" -ErrorAction SilentlyContinue) {
+  Write-Host "La aplicación ya está abierta. Ciérrela y vuelva a ejecutar este script (no cierro procesos que no abrí)." -ForegroundColor Red; exit 1
+}
 
-$env:PYTHONUTF8 = "1"; $env:PYTHONIOENCODING = "utf-8"
 $carpeta = Join-Path $env:TEMP ("prueba_vivo_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
 New-Item -ItemType Directory -Path $carpeta | Out-Null
-$api = $null; $edge = $null; $falla = $false
+$app = $null; $falla = $false
 $script:crono = New-Object System.Collections.Generic.List[string]
 $resp = New-Object System.Collections.Generic.List[string]
 $inicioUtc = (Get-Date).ToUniversalTime()
+$lineasPrevias = if (Test-Path $registro) { @(Get-Content $registro -Encoding UTF8).Count } else { 0 }
+function LineasNuevas { if (Test-Path $registro) { @(Get-Content $registro -Encoding UTF8 | Select-Object -Skip $lineasPrevias) } else { @() } }
 
 function Pregunta($texto) { $r = Read-Host ("  " + $texto + " (s/n, o escribe una nota)"); $resp.Add(("{0}  =>  {1}" -f $texto, $r)) }
 function Paso($num, $texto) { Write-Host ""; Write-Host ("PASO {0}: {1}" -f $num, $texto) -ForegroundColor Yellow }
@@ -53,41 +56,30 @@ Write-Host "  - Grabe solo en un espacio autorizado. Los clips quedan en data\ev
 if ((Read-Host "  Escribe 'acepto' para continuar") -ne "acepto") { Write-Host "Prueba cancelada. No se levantó nada." -ForegroundColor Red; exit 1 }
 
 try {
-  Write-Host "Levantando la API en el puerto $puerto..." -ForegroundColor Green
-  $api = Start-Process -FilePath $py -ArgumentList "run.py", "--port", "$puerto" -WorkingDirectory $raiz `
-    -RedirectStandardOutput "$carpeta\api.out" -RedirectStandardError "$carpeta\api.err" -WindowStyle Hidden -PassThru
-  $listo = $false
-  for ($i = 0; $i -lt 40 -and -not $listo; $i++) {
-    Start-Sleep -Milliseconds 500
-    try { Invoke-RestMethod "$base/api/v1/salud" -TimeoutSec 2 | Out-Null; $listo = $true } catch { }
-  }
-  if (-not $listo) { throw "La API no respondió en 20 s. Revisa $carpeta\api.err" }
-
-  Write-Host "Levantando el edge (modo panel, sesión '$Sesion', diagnóstico)..." -ForegroundColor Green
-  $edge = Start-Process -FilePath $py -ArgumentList "-m", "edge", "--diagnostico", "--sesion", $Sesion -WorkingDirectory $raiz `
-    -RedirectStandardOutput "$carpeta\edge.out" -RedirectStandardError "$carpeta\edge.err" -WindowStyle Hidden -PassThru
+  Write-Host "Abriendo la aplicación de escritorio (sesión '$Sesion', diagnóstico)..." -ForegroundColor Green
+  $app = Start-Process -FilePath $ejecutable -ArgumentList ($argsApp + @("--sesion", $Sesion, "--diagnostico")) -WorkingDirectory $raiz -PassThru
   $ok = $false
-  for ($i = 0; $i -lt 40 -and -not $ok; $i++) {
+  for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
     Start-Sleep -Milliseconds 500
-    if ($edge.HasExited) { throw "El edge se cerró. Revisa $carpeta\edge.err" }
-    if ((Get-Content "$carpeta\edge.err" -Raw -ErrorAction SilentlyContinue) -match "Modo panel") { $ok = $true }
+    if ($app.HasExited) { throw "La aplicación se cerró al iniciar. Revise $registro" }
+    if ((LineasNuevas) -match "Edge iniciado") { $ok = $true }
   }
-  if (-not $ok) { throw "El edge no arrancó en 20 s. Revisa $carpeta\edge.err" }
+  if (-not $ok) { throw "La aplicación no terminó de iniciar en 30 s. Revise $registro" }
 
-  Start-Process $base
-  Paso 1 "Inicia sesión en el panel ($base) con responsable.vigilancia (escribe tú la clave)."
-  Read-Host "  Enter cuando hayas entrado"
+  Paso 1 "En la VENTANA de la aplicación inicie sesión con responsable.vigilancia (escriba usted la clave)."
+  Write-Host "  Si es la primera vez, se abrió además la ventana 'Claves iniciales': anótelas antes de cerrarla." -ForegroundColor DarkGray
+  Read-Host "  Enter cuando haya entrado"
 
-  Paso 2 "En 'Buscar dispositivos': elige 'Zona 1', pulsa 'Buscar' y luego 'Conectar' en la WEBCAM y en el micrófono Intel."
+  Paso 2 "En 'Buscar dispositivos': elija 'Zona 1', pulse 'Buscar' y luego 'Conectar' en la WEBCAM y en el micrófono Intel."
   Read-Host "  Enter cuando ambos digan 'Conectada'"
   Start-Sleep 3
-  $err = Get-Content "$carpeta\edge.err" -Raw -ErrorAction SilentlyContinue
-  $conectadas = ([regex]::Matches($err, "Conectada: ")).Count
-  if ($conectadas -lt 2) { Write-Host "  Aviso: el edge registra $conectadas fuente(s) conectada(s); se esperaban 2 (cámara y micrófono)." -ForegroundColor Yellow }
-  if ($err -match "Sin modelo de video") { Write-Host "  Aviso: no está el modelo de video; la cámara solo grabará evidencia." -ForegroundColor Yellow }
+  $nuevas = LineasNuevas
+  $conectadas = @($nuevas | Where-Object { $_ -match "Conectada: " }).Count
+  if ($conectadas -lt 2) { Write-Host "  Aviso: el registro muestra $conectadas fuente(s) conectada(s); se esperaban 2 (cámara y micrófono)." -ForegroundColor Yellow }
+  if ($nuevas -match "Sin modelo de video") { Write-Host "  Aviso: no está el modelo de video; la cámara solo grabará evidencia (scripts\instalar_modelo_video.ps1)." -ForegroundColor Yellow }
   Pregunta "¿La webcam y el micrófono aparecen 'Conectada' en Zona 1?"
 
-  Paso 3 "Deja el panel en la pantalla 'Alertas' (así se mide el I1 visible). Colócate a 1-2 m de la webcam."
+  Paso 3 "Deje la ventana en la pantalla 'Alertas' (así se mide el I1 visible). Colóquese a 1-2 m de la webcam."
   Read-Host "  Enter para empezar la cuenta de 5 s"
   for ($i = 5; $i -ge 1; $i--) { Write-Host ("  Empieza en {0}... recuerda: coreografía SIN CONTACTO" -f $i) -ForegroundColor Green; Start-Sleep 1 }
   $pasos = @(
@@ -108,35 +100,38 @@ try {
   Pregunta "¿Cuántas alertas aparecieron, de qué tipo y con qué prioridad?"
   Pregunta "¿Se reproducen el video y el audio de la evidencia?"
   Write-Host "  El 'I1 visible' (hasta que se pinta en el panel) se ve en la pantalla 'Indicadores'." -ForegroundColor DarkGray
-  Read-Host "  Enter para cerrar y ver el resumen"
+  Read-Host "  Cierre la ventana de la aplicación y pulse Enter para ver el resumen"
 }
 catch { $falla = $true; Write-Host ("`nERROR: " + $_.Exception.Message) -ForegroundColor Red }
 finally {
-  foreach ($proc in @($edge, $api)) {                 # solo los procesos que abrió este script
-    if ($proc -and -not $proc.HasExited) { & taskkill /PID $proc.Id /T /F | Out-Null }
+  if ($app -and -not $app.HasExited) {                 # solo el proceso que abrió este script
+    try { $app | Wait-Process -Timeout 20 } catch { }
+    if (-not $app.HasExited) { & taskkill /PID $app.Id /T /F | Out-Null; Write-Host "La aplicación no se cerró sola: se cerró el proceso que abrió este script." -ForegroundColor Yellow }
   }
 }
 
-Start-Sleep 1
-if (Get-NetTCPConnection -LocalPort $puerto -State Listen -ErrorAction SilentlyContinue) {
+$puerto = $null
+$archivoUrl = Join-Path $datos ".api_url"
+if (Test-Path $archivoUrl) { $puerto = ([uri](Get-Content $archivoUrl -Raw).Trim()).Port }
+if ($puerto -and (Get-NetTCPConnection -LocalPort $puerto -State Listen -ErrorAction SilentlyContinue)) {
   Write-Host "Aviso: el puerto $puerto sigue ocupado." -ForegroundColor Yellow
-} else { Write-Host "Puerto $puerto libre. Los puertos 8080, 8081 y 8090 no se tocaron." -ForegroundColor Green }
+} elseif ($puerto) { Write-Host "Puerto $puerto libre. Los puertos 8080, 8081 y 8090 no se tocaron." -ForegroundColor Green }
 
-$errLineas = @(Get-Content "$carpeta\edge.err" -Encoding UTF8 -ErrorAction SilentlyContinue)
+$errLineas = LineasNuevas
 $decisiones = @($errLineas | Where-Object { $_ -match "Decisión" })
 $enviadas = @($errLineas | Where-Object { $_ -match "Alerta .* enviada" })
-$csv = Join-Path $raiz "data\mediciones_latencia.csv"
+$csv = Join-Path $datos "mediciones_latencia.csv"
 $filas = @()
 if (Test-Path $csv) {
   $filas = @(Import-Csv $csv -Encoding UTF8 | Where-Object { $_.sesion -eq $Sesion -and ([datetime]::Parse($_.generado_en)).ToUniversalTime() -ge $inicioUtc })
 }
 $res = @()
-$res += "SESIÓN: $Sesion   PUERTO: $puerto"
+$res += "SESIÓN: $Sesion   PUERTO: $puerto   APLICACIÓN: $ejecutable"
 $res += ""; $res += "RESPUESTAS:"; $res += $resp
 $res += ""; $res += "CRONOLOGÍA (hora real de cada tramo; sirve como verdad de campo para etiquetar):"; $res += $script:crono
 $res += ""; $res += ("DECISIONES DEL DETECTOR ({0}):" -f $decisiones.Count); $res += $decisiones
 $res += ""; $res += ("ALERTAS ENVIADAS ({0}):" -f $enviadas.Count); $res += $enviadas
-$res += ""; $res += "MEDICIONES DE ESTA PRUEBA (data\mediciones_latencia.csv) — I1 hasta el servidor:"
+$res += ""; $res += "MEDICIONES DE ESTA PRUEBA (mediciones_latencia.csv de la app) — I1 hasta el servidor:"
 $res += ($filas | Select-Object codigo, tipo, prioridad, modalidades, inferencia_s, espera_post_s, subida_s, total_s, con_video | Format-Table -AutoSize | Out-String).TrimEnd()
 $res += ""; $res += "I1 visible (hasta el panel): pantalla 'Indicadores' del panel."
 $res | Out-File "$carpeta\resumen.txt" -Encoding UTF8

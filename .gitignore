@@ -11,3 +11,5 @@ edge/modelos/**/*.safetensors
 edge/modelos/**/*.onnx
 edge/modelos/**/*.parcial
 edge/modelos/videomae_rwf2000/
+build/
+dist/

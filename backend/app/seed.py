@@ -18,6 +18,19 @@ CUENTAS = [  # usuario, nombre, rol, variable de entorno con la clave
 
 
 def main():
+    nuevas = crear_cuentas()
+    if nuevas:
+        print("Cuentas creadas (guarde estas claves ahora; no se vuelven a mostrar):")
+        for u, c in nuevas:
+            print(f"  {u:26s} {c}")
+    else:
+        print("Las cuentas ya existían; no se cambió nada.")
+
+
+def crear_cuentas(dispositivos_de_ejemplo: bool = True) -> list[tuple[str, str]]:
+    """Crea la base, las cuentas que falten y (en desarrollo) los dispositivos de ejemplo. Devuelve [(usuario, clave)]
+    de las cuentas NUEVAS sin imprimir ni registrar nada: la app de escritorio las muestra solo dentro de su ventana
+    y no crea dispositivos de ejemplo (las fuentes reales se conectan en «Buscar dispositivos»)."""
     db.init()
     nuevas = []
     with db.tx() as con:
@@ -27,14 +40,9 @@ def main():
             clave = os.environ.get(env) or secrets.token_urlsafe(9)
             con.execute("INSERT INTO usuarios(usuario,nombre,rol,pass_hash) VALUES (?,?,?,?)", (u, n, rol, security.hash_password(clave)))
             nuevas.append((u, clave if not os.environ.get(env) else "(la definida en " + env + ")"))
-        for n, t, z in DISPOSITIVOS:
+        for n, t, z in (DISPOSITIVOS if dispositivos_de_ejemplo else []):
             con.execute("INSERT OR IGNORE INTO dispositivos(nombre,tipo,zona) VALUES (?,?,?)", (n, t, z))
-    if nuevas:
-        print("Cuentas creadas (guarde estas claves ahora; no se vuelven a mostrar):")
-        for u, c in nuevas:
-            print(f"  {u:26s} {c}")
-    else:
-        print("Las cuentas ya existían; no se cambió nada.")
+    return nuevas
 
 
 if __name__ == "__main__":

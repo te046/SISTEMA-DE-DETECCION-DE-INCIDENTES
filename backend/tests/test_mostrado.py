@@ -19,6 +19,7 @@ def test_mostrada_la_fija_el_servidor_una_sola_vez(client, auth):
 
 def test_i1_e_i1_visible_son_indicadores_distintos(client, auth):
     antes = client.get("/api/v1/indicadores?origen=simulado", headers=auth).json()
+    client.get("/api/v1/alertas?estado=pendiente", headers=auth)                     # el panel está abierto y consulta
     det = (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()
     a = client.post("/api/v1/alertas", json=alerta_base(detectado_en=det), headers=INGEST).json()
     client.post(f"/api/v1/alertas/{a['id']}/mostrada", headers=auth)

@@ -19,7 +19,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("VIGILANCIA_DATA", ROOT / "data"))
 log = logging.getLogger("edge")
-SINCRONIZAR_S = 2.0
 LATIDO_S = 5.0
 
 
@@ -99,60 +98,29 @@ def observador_diagnostico(a, clasificador_de):
 
 
 def entregar_listos(detectores, cliente, sesion="prueba"):
-    from .entrega import entregar
-    for detector in detectores:
-        detector.procesar()
-        for evento in detector.listos():
-            try:
-                entregar(evento, detector, cliente, DATA_DIR / "mediciones_latencia.csv", sesion)
-            except Exception as e:
-                from .fusion_compartida import enmascarar_texto
-                log.error("No se pudo enviar la alerta: %s", enmascarar_texto(e))
+    from .servicio import entregar_listos as _entregar
+    _entregar(detectores, cliente, DATA_DIR / "mediciones_latencia.csv", sesion)
 
 
 # ---------------------------------------------------------------- modo panel (por defecto)
 def modo_panel(a):
-    from .buffers import BufferAudio, BufferVideo
-    from .captura import CapturaAudio, CapturaVideo
-    from .descubrir import inventario
-    from .fusion_compartida import enmascarar_texto
-    from .gestor import Gestor
+    from .servicio import ServicioEdge
 
     cliente, crear_clasificador = preparar(a)
-
-    def abrir_audio(indice):
-        return CapturaAudio(BufferAudio(segundos=15), indice)
-
-    def abrir_video(fuente):
-        return CapturaVideo(BufferVideo(segundos=15, fps=a.fps), fuente, fps=a.fps)
 
     def crear_clasificador_video():
         from .clasificador_video import ClasificadorVideo
         return ClasificadorVideo(umbral=a.umbral)
 
-    g = Gestor(cliente, abrir_audio, abrir_video, inventario, crear_clasificador=crear_clasificador,
-               crear_clasificador_video=crear_clasificador_video)
-    g.observador = observador_diagnostico(a, lambda: g.clasificador)
+    if a.diagnostico:
+        log.info("Modo diagnóstico activo: solo se imprime texto en esta consola; no se guarda ni envía audio.")
+    servicio = ServicioEdge(cliente, crear_clasificador, crear_clasificador_video, DATA_DIR / "mediciones_latencia.csv",
+                            a.sesion, a.fps, imprimir_diagnostico=(lambda s: print(s, flush=True)) if a.diagnostico else None)
     log.info("Modo panel: esperando las fuentes que se conecten en «Buscar dispositivos». API: %s. Ctrl+C para detener.", a.api)
-    proxima_sync = proximo_latido = 0.0
     try:
-        while True:
-            ahora = time.time()
-            if ahora >= proxima_sync:
-                try:
-                    g.sincronizar()
-                except Exception as e:
-                    log.warning("No se pudo sincronizar con la API (%s). Reintento en %.0f s.", enmascarar_texto(e), SINCRONIZAR_S)
-                proxima_sync = ahora + SINCRONIZAR_S
-            if ahora >= proximo_latido:
-                g.latidos()
-                proximo_latido = ahora + LATIDO_S
-            entregar_listos(g.detectores(), cliente, a.sesion)
-            time.sleep(0.05)
+        servicio.bucle()
     except KeyboardInterrupt:
         log.info("Deteniendo…")
-    finally:
-        g.cerrar_todo()
 
 
 # ---------------------------------------------------------------- modo manual (pruebas y calibración)
