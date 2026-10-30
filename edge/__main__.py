@@ -59,6 +59,10 @@ def preparar(a):
         crear_clasificador()                             # verifica el modelo antes de empezar
     except FileNotFoundError as e:
         sys.exit(str(e))
+    from .fusion_compartida import umbral_de_fusion
+    if a.umbral < umbral_de_fusion():
+        log.warning("--umbral %.2f solo cambia qué clases son candidatas. La fusión exige %.2f para alertar: "
+                    "por debajo verá «Decisión … sin alerta» en el registro, pero no alertas.", a.umbral, umbral_de_fusion())
     return ClienteApi(a.api, clave), crear_clasificador
 
 

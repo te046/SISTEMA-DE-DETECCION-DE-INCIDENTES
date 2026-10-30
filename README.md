@@ -80,6 +80,13 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
   | disparo | Gunshot, gunfire · Machine gun |
   | voces elevadas (discusión) | Shout · Yell · Children shouting |
 
+- **Dos umbrales en serie:** `--umbral` (0,50 por defecto) decide qué clases del mapeo son *candidatas*; la
+  fusión exige además **0,50** (`UMBRAL_MINIMO` en `backend/app/fusion.py`) para generar la alerta. Bajar solo
+  `--umbral` muestra más candidatas en el registro, pero **no** produce más alertas; el edge lo avisa al arrancar.
+- **Registro de decisiones:** cada candidata deja una línea `Decisión HH:MM:SS: clase confianza (clase de
+  AudioSet) · umbral clasificador · umbral fusión → ALERTA | sin alerta: motivo`. Los motivos posibles son:
+  bajo el umbral de la fusión, enfriamiento (misma clase hace menos de 8 s) o la alerta y su prioridad.
+  Solo se escribe texto: no se guarda audio.
 - **Fusión y prioridad:** se reutiliza `backend/app/fusion.py`, la misma función que en la etapa 1. Una misma
   clase no se repite en la misma zona antes de 8 s.
 - **Evidencia:** 5 s antes del evento y 1,5 s después. Se guarda en WAV (audio) y WebM/VP8 (video), formatos

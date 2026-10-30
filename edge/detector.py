@@ -5,15 +5,30 @@ prueba con audio sintético y un clasificador falso.
 """
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
 
 from .buffers import BufferAudio, BufferVideo
-from .fusion_compartida import Deteccion, fusionar
+from .fusion_compartida import Deteccion, fusionar, umbral_de_fusion
 
 log = logging.getLogger("edge.detector")
+
+
+@dataclass
+class Decision:
+    """Por qué una clase candidata alertó o no. Hay dos umbrales en serie: el del clasificador decide qué
+    clases son candidatas, y el de la fusión (backend/app/fusion.py) decide cuáles pueden alertar."""
+    t: float
+    clase: str
+    confianza: float
+    clase_audioset: str
+    umbral_clasificador: float
+    umbral_fusion: float
+    alerto: bool
+    motivo: str
 
 
 @dataclass
@@ -42,6 +57,7 @@ class Detector:
     _siguiente: int = 0
     _ultima_por_clase: dict = field(default_factory=dict)
     pendientes: list = field(default_factory=list)
+    decisiones: deque = field(default_factory=lambda: deque(maxlen=200))   # últimas decisiones (para pruebas y diagnóstico)
 
     def procesar(self) -> int:
         """Clasifica todas las ventanas completas que haya en el búfer. Devuelve cuántas procesó."""
@@ -65,18 +81,38 @@ class Detector:
         resultados = self.clasificador.clasificar(ventana)
         if self.observador:
             self.observador(ventana, t)
-        if not resultados:
+        if not resultados:                              # ninguna clase del mapeo llegó al umbral del clasificador
             return
         detecciones = [Deteccion("audio", clase, conf, self.nombre_audio, self.zona, t) for clase, conf, _ in resultados]
         alerta = fusionar(detecciones)
+        umbral_fusion = umbral_de_fusion()
         if not alerta:
+            for clase, conf, origen in resultados:
+                self._decidir(t, clase, conf, origen, False, f"bajo el umbral de la fusión ({umbral_fusion:.2f})")
             return
         clase = alerta["tipo"].lower()
-        if t - self._ultima_por_clase.get(clase, -1e18) < self.enfriamiento_s:
+        transcurrido = t - self._ultima_por_clase.get(clase, -1e18)
+        if transcurrido < self.enfriamiento_s:
+            for c, conf, origen in resultados:
+                self._decidir(t, c, conf, origen, False, f"enfriamiento: «{clase}» alertó hace {transcurrido:.1f} s (< {self.enfriamiento_s:.0f} s)")
             return
         self._ultima_por_clase[clase] = t
-        log.info("Evento: %s (%.2f) a las %.3f", alerta["tipo"], alerta["confianza"], t)
+        for c, conf, origen in resultados:
+            fue = c == clase or any(m["clase"] == c for m in alerta["modalidades"])
+            self._decidir(t, c, conf, origen, fue, f"alerta «{alerta['tipo']}», prioridad {alerta['prioridad']}" if fue
+                          else f"bajo el umbral de la fusión ({umbral_fusion:.2f})")
         self.pendientes.append(EventoPendiente(alerta, t, self.reloj(), t + self.ventana_s + self.post_s))
+
+    def _decidir(self, t: float, clase: str, conf: float, origen: str, alerto: bool, motivo: str):
+        """Registra cada decisión (solo texto: no se guarda audio)."""
+        d = Decision(t, clase, round(conf, 3), origen, self.umbral_clasificador(), umbral_de_fusion(), alerto, motivo)
+        self.decisiones.append(d)
+        log.info("Decisión %s: %s %.2f (%s) · umbral clasificador %.2f · umbral fusión %.2f → %s: %s",
+                 time.strftime("%H:%M:%S", time.localtime(t)), clase, conf, origen, d.umbral_clasificador,
+                 d.umbral_fusion, "ALERTA" if alerto else "sin alerta", motivo)
+
+    def umbral_clasificador(self) -> float:
+        return float(getattr(self.clasificador, "umbral", float("nan")))
 
     def listos(self) -> list[EventoPendiente]:
         """Eventos cuyo post-evento ya se grabó; se sacan de la lista de pendientes."""

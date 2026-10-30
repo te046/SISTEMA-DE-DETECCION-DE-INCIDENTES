@@ -10,7 +10,14 @@ _BACKEND = Path(__file__).resolve().parents[1] / "backend"
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
+from app import fusion as _fusion  # noqa: E402
 from app.fusion import Deteccion, fusionar  # noqa: E402
 from app.urls import enmascarar_texto, enmascarar_url  # noqa: E402  (sin dependencias, igual que fusion.py)
 
-__all__ = ["Deteccion", "fusionar", "enmascarar_texto", "enmascarar_url"]
+
+def umbral_de_fusion() -> float:
+    """Confianza mínima que exige la fusión para generar una alerta (se lee en cada uso, no se copia)."""
+    return _fusion.UMBRAL_MINIMO
+
+
+__all__ = ["Deteccion", "fusionar", "umbral_de_fusion", "enmascarar_texto", "enmascarar_url"]
