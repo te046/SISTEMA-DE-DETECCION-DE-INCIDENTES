@@ -309,6 +309,7 @@ function vIndicadores() {
     <div class="kpis">
     ${k("I1 · Detección (hasta el servidor)", num(i.I1_ttd_s, " s"), i.I1_cumple_rnf01 === null || i.I1_cumple_rnf01 === undefined ? '<span class="pill neutral">Sin datos</span>' : `<span class="pill ${i.I1_cumple_rnf01 >= 95 ? "ok" : "off"}">${pct(i.I1_cumple_rnf01)} de alertas en ≤ 5 s</span>`)}
     ${k("I1 visible · hasta el panel", num(i.I1_visible_s, " s"), i.I1_visible_cumple_rnf01 === null || i.I1_visible_cumple_rnf01 === undefined ? '<span class="pill neutral">Sin datos</span>' : `<span class="pill ${i.I1_visible_cumple_rnf01 >= 95 ? "ok" : "off"}">${pct(i.I1_visible_cumple_rnf01)} visibles en ≤ 5 s</span>`)}
+    ${i.alertas_con_panel_cerrado ? `<div class="lbl" style="grid-column:1/-1;margin-top:-8px">${i.alertas_con_panel_cerrado} alertas llegaron con el panel cerrado: no cuentan en «I1 visible».</div>` : ""}
     ${k("I2 · Tiempo de atención", num(i.I2_tta_s, " s"), '<div class="lbl" style="margin-top:10px">Desde que aparece la alerta hasta que se resuelve.</div>')}
     ${k("I3 · Precisión", pct(i.I3_precision_pct), '<div class="lbl" style="margin-top:10px">Confirmadas ÷ resueltas. El recall y el F1 requieren un conjunto etiquetado.</div>')}
     ${k("I4 · Falsas alarmas", pct(i.I4_falsas_alarmas_pct), '<div class="lbl" style="margin-top:10px">Descartadas ÷ resueltas.</div>')}

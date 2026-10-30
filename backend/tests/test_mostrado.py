@@ -39,12 +39,36 @@ def test_migracion_agrega_la_columna_a_una_base_antigua(tmp_path, monkeypatch):
     vieja = tmp_path / "vieja.db"
     con = sqlite3.connect(vieja)
     con.executescript(db.SCHEMA)                                                            # esquema anterior: sin mostrado_en
-    assert "mostrado_en" not in {r[1] for r in con.execute("PRAGMA table_info(alertas)")}
+    assert not {"mostrado_en", "panel_activo"} & {r[1] for r in con.execute("PRAGMA table_info(alertas)")}
     con.execute("INSERT INTO alertas(codigo,tipo,prioridad,dispositivos,zona,confianza,modalidades,detectado_en,generado_en)"
                 " VALUES ('A-0001','Grito',2,'Mic','Zona 1',0.8,'[]','2026-10-29T10:00:00+00:00','2026-10-29T10:00:02+00:00')")
     con.commit(); con.close()
     monkeypatch.setattr(config, "DB_PATH", vieja)
     db.init(); db.init()                                                                    # idempotente
     con = sqlite3.connect(vieja)
-    assert "mostrado_en" in {r[1] for r in con.execute("PRAGMA table_info(alertas)")}
+    assert {"mostrado_en", "panel_activo"} <= {r[1] for r in con.execute("PRAGMA table_info(alertas)")}
     assert con.execute("SELECT codigo FROM alertas").fetchone()[0] == "A-0001"             # no se pierden datos
+
+
+def test_i1_visible_solo_cuenta_alertas_llegadas_con_el_panel_abierto(client, auth, monkeypatch):
+    from app import main
+    det = lambda: (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()
+    antes = client.get("/api/v1/indicadores?origen=simulado", headers=auth).json()
+    monkeypatch.setattr(main, "_ultima_consulta_panel", None)                       # nadie mirando el panel
+    cerrada = client.post("/api/v1/alertas", json=alerta_base(detectado_en=det()), headers=INGEST).json()
+    assert cerrada["panel_activo"] == 0
+    client.get("/api/v1/alertas?estado=pendiente", headers=auth)                     # el panel consulta
+    abierta = client.post("/api/v1/alertas", json=alerta_base(detectado_en=det()), headers=INGEST).json()
+    assert abierta["panel_activo"] == 1
+    for a in (cerrada, abierta):
+        client.post(f"/api/v1/alertas/{a['id']}/mostrada", headers=auth)
+    ind = client.get("/api/v1/indicadores?origen=simulado", headers=auth).json()
+    assert ind["I1_visible_n"] == antes["I1_visible_n"] + 1                          # solo la que llegó con el panel abierto
+    assert ind["alertas_con_panel_cerrado"] == antes["alertas_con_panel_cerrado"] + 1
+
+
+def test_panel_activo_caduca(monkeypatch):
+    from app import main
+    t = datetime(2026, 10, 30, 6, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(main, "_ultima_consulta_panel", t)
+    assert main.panel_activo(t + timedelta(seconds=3)) and not main.panel_activo(t + timedelta(seconds=3.1))

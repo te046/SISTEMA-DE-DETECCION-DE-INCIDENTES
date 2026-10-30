@@ -97,6 +97,7 @@ def tx():
 
 MIGRACIONES = [   # (tabla, columna, definición): se agregan solo si faltan; nunca se borran datos
     ("alertas", "mostrado_en", "TEXT"),   # hora del SERVIDOR al recibir el aviso del panel (para «I1 visible»)
+    ("alertas", "panel_activo", "INTEGER"),   # 1 si el panel estaba consultando cuando llegó la alerta; NULL = sin dato (alertas antiguas)
 ]
 
 

@@ -27,6 +27,12 @@ bearer = HTTPBearer(auto_error=False)
 
 
 TOLERANCIA_RELOJ_S = 2.0      # desfase admitido entre el reloj del edge y el del servidor
+PANEL_ACTIVO_S = 3.0          # el panel consulta cada 1 s: si consultó hace ≤ 3 s, se considera abierto
+_ultima_consulta_panel: datetime | None = None   # en memoria: un solo proceso de API (en la etapa 5, revisar)
+
+
+def panel_activo(momento: datetime) -> bool:
+    return _ultima_consulta_panel is not None and (momento - _ultima_consulta_panel).total_seconds() <= PANEL_ACTIVO_S
 
 
 def ahora() -> datetime:
@@ -145,10 +151,10 @@ def crear_alerta(a: AlertaNueva):
               "Sincronice el reloj del equipo de captura (Configuración › Hora › Sincronizar ahora).")
     with db.tx() as con:
         cur = con.execute(
-            "INSERT INTO alertas(tipo,prioridad,dispositivos,zona,confianza,modalidades,origen,evidencia_video,evidencia_audio,detectado_en,generado_en)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO alertas(tipo,prioridad,dispositivos,zona,confianza,modalidades,origen,evidencia_video,evidencia_audio,"
+            "detectado_en,generado_en,panel_activo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (a.tipo, a.prioridad, a.dispositivos, a.zona, a.confianza, json.dumps([m.model_dump() for m in a.modalidades]),
-             a.origen, a.evidencia_video, a.evidencia_audio, iso(det), iso(gen)))
+             a.origen, a.evidencia_video, a.evidencia_audio, iso(det), iso(gen), int(panel_activo(gen))))
         codigo = f"A-{cur.lastrowid:04d}"
         con.execute("UPDATE alertas SET codigo=? WHERE id=?", (codigo, cur.lastrowid))
         return fila_alerta(con.execute("SELECT * FROM alertas WHERE id=?", (cur.lastrowid,)).fetchone())
@@ -157,6 +163,8 @@ def crear_alerta(a: AlertaNueva):
 @app.get("/api/v1/alertas")
 def listar_alertas(estado: Literal["pendiente", "confirmada", "descartada"] | None = None,
                    prioridad: Literal[1, 2, 3] | None = None, _u=Depends(usuario_actual)):
+    global _ultima_consulta_panel
+    _ultima_consulta_panel = ahora()                  # el panel abierto en «Alertas» consulta aquí cada 1 s
     sql, p = "SELECT * FROM alertas WHERE 1=1", []
     if estado:
         sql += " AND estado=?"; p.append(estado)
@@ -240,7 +248,9 @@ def indicadores(origen: Literal["edge", "simulado"] | None = None, _u=Depends(us
         rows = con.execute(q, (origen,) if origen else ()).fetchall()
     ttd = [(parse(r["generado_en"]) - parse(r["detectado_en"])).total_seconds() for r in rows]
     # «I1 visible» es un indicador aparte (no redefine I1): hasta que el panel pinta la alerta.
-    ttd_visible = [(parse(r["mostrado_en"]) - parse(r["detectado_en"])).total_seconds() for r in rows if r["mostrado_en"]]
+    # Solo alertas que llegaron con el panel abierto: si nadie miraba, el tiempo hasta verla no es latencia del sistema.
+    ttd_visible = [(parse(r["mostrado_en"]) - parse(r["detectado_en"])).total_seconds()
+                   for r in rows if r["mostrado_en"] and r["panel_activo"] == 1]
     tta = [(parse(r["resuelto_en"]) - parse(r["generado_en"])).total_seconds() for r in rows if r["resuelto_en"]]
     conf = sum(r["estado"] == "confirmada" for r in rows)
     desc = sum(r["estado"] == "descartada" for r in rows)
@@ -251,6 +261,8 @@ def indicadores(origen: Literal["edge", "simulado"] | None = None, _u=Depends(us
         "I1_visible_s": _media(ttd_visible),
         "I1_visible_cumple_rnf01": (round(100 * sum(t <= 5 for t in ttd_visible) / len(ttd_visible), 1) if ttd_visible else None),
         "I1_visible_n": len(ttd_visible),
+        "alertas_con_panel_cerrado": sum(r["panel_activo"] == 0 for r in rows),
+        "alertas_sin_dato_de_panel": sum(r["panel_activo"] is None for r in rows),
         "I2_tta_s": _media(tta),
         "I3_precision_pct": round(100 * conf / res, 1) if res else None,
         "I4_falsas_alarmas_pct": round(100 * desc / res, 1) if res else None,
