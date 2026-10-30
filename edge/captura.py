@@ -24,12 +24,27 @@ def esperas_backoff(inicial: float = 1.0, maximo: float = 30.0):
         espera = min(maximo, espera * 2)
 
 
+LIMITE_SIN_AUDIO_S = 3.0      # si ya entregaba audio y deja de hacerlo por más de esto, se considera caído
+MARGEN_ARRANQUE_S = 5.0       # tiempo que se espera el primer bloque tras abrir (MME puede tardar ~2 s)
+
+
+def audio_vivo(ahora: float, abierto_en: float | None, ultimo_bloque: float,
+               limite_s: float = LIMITE_SIN_AUDIO_S, margen_arranque_s: float = MARGEN_ARRANQUE_S) -> bool:
+    """¿El micrófono está entregando audio? Distingue el arranque (aún sin bloques) de un corte real."""
+    if abierto_en is None:
+        return False
+    if ultimo_bloque >= abierto_en:                    # ya llegó audio desde esta apertura
+        return ahora - ultimo_bloque < limite_s
+    return ahora - abierto_en < margen_arranque_s     # recién abierto: se le da margen al primer bloque
+
+
 class CapturaAudio:
     """Micrófono a 16 kHz mono. `dispositivo`: índice de sounddevice o None (predeterminado de Windows)."""
 
     def __init__(self, buffer: BufferAudio, dispositivo: int | None = None, bloque_s: float = 0.1):
         self.buffer, self.dispositivo, self.bloque_s = buffer, dispositivo, bloque_s
         self._detener = threading.Event()
+        self._abierto_en: float | None = None
         self._ultimo_bloque = 0.0
         self._latencia = 0.0
         self.metricas = {"latencia_entrada_ms": None, "reconexiones": 0}
@@ -37,7 +52,7 @@ class CapturaAudio:
 
     @property
     def vivo(self) -> bool:
-        return time.time() - self._ultimo_bloque < 3.0
+        return audio_vivo(time.time(), self._abierto_en, self._ultimo_bloque)
 
     def iniciar(self):
         self._hilo.start()
@@ -61,6 +76,7 @@ class CapturaAudio:
                 self._latencia = 0.0
                 with sd.InputStream(samplerate=self.buffer.sr, channels=1, dtype="float32", device=self.dispositivo,
                                     blocksize=int(self.buffer.sr * self.bloque_s), callback=self._callback) as s:
+                    self._abierto_en = time.time()
                     self._latencia = float(s.latency)
                     self.metricas["latencia_entrada_ms"] = round(self._latencia * 1000, 1)
                     log.info("Micrófono abierto (latencia de entrada %.0f ms).", self._latencia * 1000)
@@ -70,6 +86,7 @@ class CapturaAudio:
                         if not self.vivo:
                             raise RuntimeError("el micrófono dejó de enviar audio")
             except Exception as e:                       # desconexión, dispositivo ocupado, etc.
+                self._abierto_en = None                  # cerrado: los latidos lo informan como desconectado
                 espera = next(esperas)
                 self.metricas["reconexiones"] += 1
                 log.warning("Micrófono no disponible (%s). Reintento en %.0f s.", e, espera)
