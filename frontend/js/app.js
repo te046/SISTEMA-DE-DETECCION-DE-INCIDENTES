@@ -3,7 +3,7 @@ import { horaAlerta } from "./tiempo.js";
 
 const $app = document.getElementById("app");
 const PRIO = { 1: "Alta", 2: "Media", 3: "Baja" };
-const POLL_MS = 4000;
+const POLL_MS = 1000;       // con 4 s la alerta podía tardar hasta 4 s más en verse (RNF-01). Etapa 5: SSE o WebSocket.
 
 const S = {
   ses: sesion(),            // {token, usuario:{nombre,rol,usuario}}
@@ -82,10 +82,22 @@ async function cargarPanel(primera = false) {
     const cambio = JSON.stringify([alertas, ind, devs]) !== JSON.stringify([S.alertas, S.ind, S.devs]);
     S.alertas = alertas; S.ind = ind; S.devs = devs; S.cargando = false;
     if (primera || cambio) render();
+    marcarMostradas(alertas);
   } catch (e) {
     S.cargando = false;
     if (S.ses) { msg(e.message + " " + (e.solucion || ""), "err"); render(); }
   }
+}
+
+// «I1 visible»: avisa a la API la primera vez que una alerta queda pintada en la cola. La hora la pone el
+// servidor al recibir el aviso (no el reloj de este equipo). Solo cuenta si la pantalla de alertas está a la vista.
+const marcadas = new Set();
+function marcarMostradas(alertas) {
+  if (S.pantalla !== "panel" || document.hidden) return;
+  alertas.filter((a) => !a.mostrado_en && !marcadas.has(a.id)).forEach((a) => {
+    marcadas.add(a.id);
+    llamar(`/alertas/${a.id}/mostrada`, { metodo: "POST" }).catch(() => marcadas.delete(a.id));   // reintenta en el próximo sondeo
+  });
 }
 
 function anunciar(texto) { const r = document.getElementById("anuncio"); if (r) { r.textContent = ""; setTimeout(() => (r.textContent = texto), 50); } }
@@ -295,7 +307,8 @@ function vIndicadores() {
   return `<section style="display:flex;flex-direction:column;gap:20px"><div><h1 class="h-title">Indicadores</h1>
     <p class="lbl h-sub" style="max-width:760px">Calculados con las marcas de tiempo y las decisiones registradas. Los valores de la tesis se toman en el pretest y el postest.</p></div>
     <div class="kpis">
-    ${k("I1 · Tiempo de detección", num(i.I1_ttd_s, " s"), i.I1_cumple_rnf01 === null || i.I1_cumple_rnf01 === undefined ? '<span class="pill neutral">Sin datos</span>' : `<span class="pill ${i.I1_cumple_rnf01 >= 95 ? "ok" : "off"}">${pct(i.I1_cumple_rnf01)} de alertas en ≤ 5 s</span>`)}
+    ${k("I1 · Detección (hasta el servidor)", num(i.I1_ttd_s, " s"), i.I1_cumple_rnf01 === null || i.I1_cumple_rnf01 === undefined ? '<span class="pill neutral">Sin datos</span>' : `<span class="pill ${i.I1_cumple_rnf01 >= 95 ? "ok" : "off"}">${pct(i.I1_cumple_rnf01)} de alertas en ≤ 5 s</span>`)}
+    ${k("I1 visible · hasta el panel", num(i.I1_visible_s, " s"), i.I1_visible_cumple_rnf01 === null || i.I1_visible_cumple_rnf01 === undefined ? '<span class="pill neutral">Sin datos</span>' : `<span class="pill ${i.I1_visible_cumple_rnf01 >= 95 ? "ok" : "off"}">${pct(i.I1_visible_cumple_rnf01)} visibles en ≤ 5 s</span>`)}
     ${k("I2 · Tiempo de atención", num(i.I2_tta_s, " s"), '<div class="lbl" style="margin-top:10px">Desde que aparece la alerta hasta que se resuelve.</div>')}
     ${k("I3 · Precisión", pct(i.I3_precision_pct), '<div class="lbl" style="margin-top:10px">Confirmadas ÷ resueltas. El recall y el F1 requieren un conjunto etiquetado.</div>')}
     ${k("I4 · Falsas alarmas", pct(i.I4_falsas_alarmas_pct), '<div class="lbl" style="margin-top:10px">Descartadas ÷ resueltas.</div>')}

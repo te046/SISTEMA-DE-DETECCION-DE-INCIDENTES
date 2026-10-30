@@ -70,6 +70,15 @@ Dockerfile + `docker-compose` (API, proxy Caddy con HTTPS, PostgreSQL), variable
 - **Video (línea base):** VideoMAE RWF-2000 (CC BY-NC 4.0, procedencia en `edge/modelos/PROCEDENCIA.md`). Medir
   precisión/recall con grabaciones de prueba etiquetadas antes de declarar cualquier métrica; la exactitud del autor
   (0,73) no es un resultado del proyecto.
+- **Definición operativa de I1 (actualizar en la documentación de Teo):** hay DOS indicadores con nombre distinto.
+  «I1 · Detección (hasta el servidor)» = generado_en − detectado_en (sin cambios). «I1 visible (hasta el panel)» =
+  mostrado_en − detectado_en, donde mostrado_en lo fija el SERVIDOR al recibir el aviso del panel (incluye el
+  trayecto de red del aviso y requiere el panel abierto en «Alertas»). RNF-01 («visible en ≤ 5 s») se evalúa con
+  «I1 visible». Teo debe reflejarlo en la operacionalización de variables de su tesis.
+- **Etapa 5: cambiar el sondeo del panel (hoy cada 1 s) por SSE o WebSocket**, para no cargar el servidor y
+  bajar el «I1 visible».
+- **Sesiones de medición:** `python -m edge --sesion tesis` etiqueta las filas de `data/mediciones_latencia.csv`
+  que van al análisis; por defecto es «prueba». Una sesión «tesis» no admite el umbral de fusión provisional.
 - **`.venv-export/` (869 MB):** entorno aparte con PyTorch CPU y transformers que solo sirve para re-exportar el
   modelo de video (`scripts/exportar_modelo_video.py`). No forma parte de la app. Teo decide cuándo borrarlo:
   no tocarlo sin su OK.

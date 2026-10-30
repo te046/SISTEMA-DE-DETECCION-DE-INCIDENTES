@@ -95,6 +95,14 @@ def tx():
         con.close()
 
 
+MIGRACIONES = [   # (tabla, columna, definición): se agregan solo si faltan; nunca se borran datos
+    ("alertas", "mostrado_en", "TEXT"),   # hora del SERVIDOR al recibir el aviso del panel (para «I1 visible»)
+]
+
+
 def init():
     with tx() as con:
         con.executescript(SCHEMA)
+        for tabla, columna, definicion in MIGRACIONES:
+            if columna not in {r["name"] for r in con.execute(f"PRAGMA table_info({tabla})")}:
+                con.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")

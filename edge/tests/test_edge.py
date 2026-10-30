@@ -136,7 +136,7 @@ def test_entrega_sube_audio_y_video_y_registra_tiempos(tmp_path):
     assert ea.endswith(".wav") and ev.endswith(".webm")
     assert alerta["modalidades"] == [{"modalidad": "audio", "clase": "grito", "confianza": 0.84}]
     lineas = csv_path.read_text(encoding="utf-8").splitlines()
-    assert lineas[0].startswith("codigo,tipo,detectado_en") and len(lineas) == 2
+    assert lineas[0].startswith("sesion,codigo,tipo,prioridad") and lineas[1].startswith("prueba,") and len(lineas) == 2
 
 
 def test_yamnet_real_no_alerta_con_silencio_ni_ruido_suave():
@@ -148,3 +148,20 @@ def test_yamnet_real_no_alerta_con_silencio_ni_ruido_suave():
     assert c.clasificar(np.zeros(SR, np.float32)) == []
     ruido = (np.random.default_rng(0).standard_normal(SR) * 0.005).astype(np.float32)
     assert c.clasificar(ruido) == []
+
+
+def test_csv_con_sesion_y_rotacion_del_formato_anterior(tmp_path):
+    from edge.entrega import COLUMNAS, preparar_registro
+    ruta = tmp_path / "mediciones_latencia.csv"
+    ruta.write_text("codigo,tipo,detectado_en,generado_en,inferencia_s,espera_post_s,subida_s,total_s,con_video\nA-1,Grito,x,y,1,1,1,2,False\n", encoding="utf-8")
+    renombrado = preparar_registro(ruta)
+    assert renombrado is not None and renombrado.exists() and not ruta.exists()
+    assert "A-1" in renombrado.read_text(encoding="utf-8")                     # no se perdió nada
+    ahora = [1e12]
+    d, _ = _escena(lambda: ahora[0]); d.procesar()
+    entregar(d.listos()[0], d, ApiFalsa(), ruta, sesion="tesis")
+    filas = ruta.read_text(encoding="utf-8").splitlines()
+    assert filas[0] == ",".join(COLUMNAS) and filas[1].startswith("tesis,A-0001,Grito,2,audio,0.5,")
+    assert preparar_registro(ruta) is None                                      # mismo formato: no se toca
+    with pytest.raises(ValueError):
+        entregar(None, d, ApiFalsa(), ruta, sesion="otra")              # se valida antes de tocar nada

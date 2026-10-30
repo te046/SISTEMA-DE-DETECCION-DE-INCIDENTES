@@ -194,6 +194,17 @@ def resolver(alerta_id: int, r: Resolucion, u=Depends(usuario_actual)):
         return fila_alerta(con.execute("SELECT * FROM alertas WHERE id=?", (alerta_id,)).fetchone())
 
 
+@app.post("/api/v1/alertas/{alerta_id}/mostrada")
+def marcar_mostrada(alerta_id: int, _u=Depends(usuario_actual)):
+    """El panel avisa que pintó la alerta por primera vez. La hora la pone el SERVIDOR al recibir el aviso
+    (no el reloj del navegador), así que «I1 visible» incluye el trayecto de red del aviso. Solo cuenta la primera vez."""
+    with db.tx() as con:
+        if not con.execute("SELECT 1 FROM alertas WHERE id=?", (alerta_id,)).fetchone():
+            error(404, "No existe esa alerta.", "Actualice la lista de alertas.")
+        con.execute("UPDATE alertas SET mostrado_en=? WHERE id=? AND mostrado_en IS NULL", (iso(ahora()), alerta_id))
+        return {"mostrado_en": con.execute("SELECT mostrado_en FROM alertas WHERE id=?", (alerta_id,)).fetchone()["mostrado_en"]}
+
+
 @app.post("/api/v1/alertas/{alerta_id}/deshacer")
 def deshacer(alerta_id: int, u=Depends(usuario_actual)):
     with db.tx() as con:
@@ -228,6 +239,8 @@ def indicadores(origen: Literal["edge", "simulado"] | None = None, _u=Depends(us
         q = "SELECT * FROM alertas" + (" WHERE origen=?" if origen else "")
         rows = con.execute(q, (origen,) if origen else ()).fetchall()
     ttd = [(parse(r["generado_en"]) - parse(r["detectado_en"])).total_seconds() for r in rows]
+    # «I1 visible» es un indicador aparte (no redefine I1): hasta que el panel pinta la alerta.
+    ttd_visible = [(parse(r["mostrado_en"]) - parse(r["detectado_en"])).total_seconds() for r in rows if r["mostrado_en"]]
     tta = [(parse(r["resuelto_en"]) - parse(r["generado_en"])).total_seconds() for r in rows if r["resuelto_en"]]
     conf = sum(r["estado"] == "confirmada" for r in rows)
     desc = sum(r["estado"] == "descartada" for r in rows)
@@ -235,6 +248,9 @@ def indicadores(origen: Literal["edge", "simulado"] | None = None, _u=Depends(us
     return {
         "alertas_total": len(rows), "pendientes": len(rows) - res, "confirmadas": conf, "descartadas": desc,
         "I1_ttd_s": _media(ttd), "I1_cumple_rnf01": (round(100 * sum(t <= 5 for t in ttd) / len(ttd), 1) if ttd else None),
+        "I1_visible_s": _media(ttd_visible),
+        "I1_visible_cumple_rnf01": (round(100 * sum(t <= 5 for t in ttd_visible) / len(ttd_visible), 1) if ttd_visible else None),
+        "I1_visible_n": len(ttd_visible),
         "I2_tta_s": _media(tta),
         "I3_precision_pct": round(100 * conf / res, 1) if res else None,
         "I4_falsas_alarmas_pct": round(100 * desc / res, 1) if res else None,

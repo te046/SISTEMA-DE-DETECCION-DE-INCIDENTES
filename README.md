@@ -114,9 +114,17 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
 - **Evidencia:** 5 s antes del evento y 1,5 s después. Se guarda en WAV (audio) y WebM/VP8 (video), formatos
   que reproducen Chrome, Edge y WebView2. Se sube con la clave del edge (`POST /api/v1/evidencias`) y solo se
   ve con sesión iniciada (`GET /api/v1/evidencias/{archivo}`).
-- **Tiempos (I1, RNF-01 ≤ 5 s):** cada alerta deja una fila en `data/mediciones_latencia.csv` con los
-  tramos de inferencia, espera del post-evento y subida, para ubicar el cuello de botella. Por diseño, el
-  I1 incluye la ventana de 1 s y la espera de 1,5 s del clip.
+- **Tiempos: dos indicadores distintos**
+  - **I1 · Detección (hasta el servidor)** = `generado_en − detectado_en`. Incluye la ventana del modelo y la
+    espera del post-evento del clip. Cada alerta deja una fila en `data/mediciones_latencia.csv` con los tramos
+    (inferencia, espera del post-evento, subida) para ubicar el cuello de botella.
+  - **I1 visible (hasta el panel)** = `mostrado_en − detectado_en`. `mostrado_en` lo fija **el servidor** cuando
+    recibe el aviso del panel de que pintó la alerta por primera vez (no el reloj del navegador), así que **incluye
+    el trayecto de red** del aviso. Solo se registra con el panel abierto en «Alertas». Es el que corresponde a
+    RNF-01 («alerta visible en ≤ 5 s»). El panel consulta cada **1 s** (antes 4 s); en la etapa 5 se cambiará por SSE o WebSocket.
+  - **Sesión:** la columna `sesion` del CSV distingue `prueba` (por defecto) de `tesis` (`python -m edge --sesion tesis`).
+    Solo las filas `tesis` van al análisis, y una sesión `tesis` no admite el umbral de fusión provisional. Si el CSV
+    tenía el formato anterior, se **renombra** a `mediciones_latencia.anterior-<fecha>.csv` (no se borra).
 
 ## Probar
 - **Pruebas automáticas (no necesitan hardware):**
@@ -125,6 +133,17 @@ tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se 
   - Panel (horas en zona de Lima, sin dependencias): `set TZ=America/Lima&& node --test frontend/tests/tiempo.test.mjs`
 - **Sin cámaras:** `python scripts/simular.py --url http://127.0.0.1:<puerto> --cantidad 4` envía alertas
   marcadas como `simulado`. `python scripts/limpiar_simulados.py` las borra antes de medir con datos reales.
+- **Prueba guiada EN VIVO con webcam y micrófono:** `powershell -ExecutionPolicy Bypass -File scripts\prueba_vivo.ps1`
+  (agregue `-Sesion tesis` solo para mediciones de la tesis).
+  - Pide aceptar las condiciones de seguridad: la pelea es **simulada, coreografiada y sin contacto**, y quien salga
+    en cámara debe dar su permiso.
+  - Elige un puerto libre (sin tocar 8080, 8081 ni 8090), levanta la API y el edge, y usted inicia sesión y conecta
+    la cámara y el micrófono desde el panel.
+  - Guía 90 s: quieto, movimiento normal, pelea simulada con voces elevadas (prueba video + audio = alta) y pelea
+    simulada en silencio (solo video).
+  - Al final cierra solo sus procesos y muestra la cronología real, las decisiones del detector, las alertas y su I1
+    (desde `data\mediciones_latencia.csv`). Los registros de la prueba son solo texto, en `%TEMP%`; los clips quedan
+    únicamente en `data\evidencias\`.
 - **Prueba guiada de audio (calibración):** `powershell -ExecutionPolicy Bypass -File scripts\prueba_audio.ps1 -Microfono 1`
   - Comprueba que el puerto 8000 esté libre y abre Configuración › Sonido para apagar las «Mejoras de audio».
   - Levanta la API y el edge en modo manual con `--diagnostico` y guía 90 s con una cronología fija: silencio,

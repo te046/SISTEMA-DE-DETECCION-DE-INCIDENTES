@@ -4,7 +4,9 @@ Los tiempos se guardan en data/mediciones_latencia.csv para ubicar el cuello de 
   espera_post_s  = lo que se espera para grabar el post-evento del clip
   inferencia_s   = fin del modelo − inicio de la ventana
   subida_s       = escribir y subir los clips
-  total_s        = generado_en (servidor) − detectado_en (captura)  → es el I1 de esa alerta
+  total_s        = generado_en (servidor) − detectado_en (captura)  → es el I1 de esa alerta (hasta el servidor)
+  sesion         = «prueba» o «tesis»: solo las filas «tesis» van al análisis de la tesis
+El «I1 visible» (hasta que el panel pinta la alerta) lo calcula la API con mostrado_en, no este archivo.
 """
 import csv
 import logging
@@ -15,12 +17,31 @@ from pathlib import Path
 
 from .detector import Detector, EventoPendiente
 from .evidencia import escribir_webm, wav_bytes
+from .fusion_compartida import umbral_de_fusion
 
 log = logging.getLogger("edge.entrega")
-COLUMNAS = ["codigo", "tipo", "detectado_en", "generado_en", "inferencia_s", "espera_post_s", "subida_s", "total_s", "con_video"]
+COLUMNAS = ["sesion", "codigo", "tipo", "prioridad", "modalidades", "umbral_fusion", "detectado_en", "generado_en",
+            "inferencia_s", "espera_post_s", "subida_s", "total_s", "con_video"]
+SESIONES = ("prueba", "tesis")
 
 
-def entregar(e: EventoPendiente, detector: Detector, cliente, registro_csv: Path | None = None) -> dict:
+def preparar_registro(ruta: Path) -> Path | None:
+    """Si el CSV existe con otro encabezado (versión anterior), lo RENOMBRA (no lo borra) y devuelve el nombre nuevo."""
+    if not ruta.exists():
+        return None
+    with open(ruta, encoding="utf-8", newline="") as f:
+        encabezado = next(csv.reader(f), [])
+    if encabezado == COLUMNAS:
+        return None
+    destino = ruta.with_name(f"{ruta.stem}.anterior-{datetime.now():%Y%m%d-%H%M%S}{ruta.suffix}")
+    ruta.rename(destino)
+    log.info("El registro de mediciones tenía otro formato: se renombró a %s (no se borró).", destino.name)
+    return destino
+
+
+def entregar(e: EventoPendiente, detector: Detector, cliente, registro_csv: Path | None = None, sesion: str = "prueba") -> dict:
+    if sesion not in SESIONES:
+        raise ValueError(f"sesion debe ser una de {SESIONES}")
     t_inicio_entrega = time.time()
     audio, fotos = detector.clips(e)
     sr = detector.audio.sr if detector.audio is not None else 16000     # un evento de video puede no tener micrófono
@@ -35,7 +56,8 @@ def entregar(e: EventoPendiente, detector: Detector, cliente, registro_csv: Path
     creada = cliente.alerta(e.alerta, url_audio, url_video)
     total = (datetime.fromisoformat(creada["generado_en"]) - datetime.fromisoformat(creada["detectado_en"])).total_seconds()
     fila = {
-        "codigo": creada.get("codigo"), "tipo": creada.get("tipo"),
+        "sesion": sesion, "codigo": creada.get("codigo"), "tipo": creada.get("tipo"), "prioridad": e.alerta["prioridad"],
+        "modalidades": "+".join(sorted({m["modalidad"] for m in e.alerta["modalidades"]})), "umbral_fusion": umbral_de_fusion(),
         "detectado_en": creada["detectado_en"], "generado_en": creada["generado_en"],
         "inferencia_s": round(e.t_inferencia - e.t_evento, 3),
         "espera_post_s": round(max(0.0, t_inicio_entrega - e.t_inferencia), 3),
@@ -46,6 +68,7 @@ def entregar(e: EventoPendiente, detector: Detector, cliente, registro_csv: Path
     if total > 5:
         log.warning("I1 superó 5 s (RNF-01). Revise el tramo más largo en la línea anterior.")
     if registro_csv:
+        preparar_registro(registro_csv)
         nuevo = not registro_csv.exists()
         with open(registro_csv, "a", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=COLUMNAS)

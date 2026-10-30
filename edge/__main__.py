@@ -43,6 +43,8 @@ def argumentos():
                     help="PROVISIONAL, solo demostraciones: confianza mínima para ALERTAR (por defecto 0.50, "
                          "o VIGILANCIA_UMBRAL_FUSION). No usar en mediciones de la tesis hasta calibrar")
     ap.add_argument("--fps", type=float, default=10.0, help="fotogramas por segundo que se guardan")
+    ap.add_argument("--sesion", choices=["prueba", "tesis"], default="prueba",
+                    help="etiqueta de las filas de data/mediciones_latencia.csv; solo «tesis» va al análisis")
     ap.add_argument("--diagnostico", action="store_true",
                     help="muestra en consola, cada segundo, el nivel del micrófono y las 3 clases con mayor puntaje (no guarda audio)")
     return ap.parse_args()
@@ -72,6 +74,10 @@ def preparar(a):
     if abs(umbral_de_fusion() - 0.50) > 1e-9:
         log.warning("UMBRAL DE FUSIÓN PROVISIONAL = %.2f (por defecto 0.50). Solo para demostraciones: "
                     "estas alertas no sirven como medición de la tesis hasta calibrar.", umbral_de_fusion())
+    if a.sesion == "tesis" and abs(umbral_de_fusion() - 0.50) > 1e-9:
+        sys.exit("Una sesión «tesis» no puede usar el umbral de fusión provisional. Quite --umbral-fusion "
+                 "o VIGILANCIA_UMBRAL_FUSION, o use --sesion prueba.")
+    log.info("Sesión de medición: %s (columna «sesion» de data/mediciones_latencia.csv).", a.sesion)
     if a.umbral < umbral_de_fusion():
         log.warning("--umbral %.2f solo cambia qué clases son candidatas. La fusión exige %.2f para alertar: "
                     "por debajo verá «Decisión … sin alerta» en el registro, pero no alertas.", a.umbral, umbral_de_fusion())
@@ -92,13 +98,13 @@ def observador_diagnostico(a, clasificador_de):
     return Perezoso()
 
 
-def entregar_listos(detectores, cliente):
+def entregar_listos(detectores, cliente, sesion="prueba"):
     from .entrega import entregar
     for detector in detectores:
         detector.procesar()
         for evento in detector.listos():
             try:
-                entregar(evento, detector, cliente, DATA_DIR / "mediciones_latencia.csv")
+                entregar(evento, detector, cliente, DATA_DIR / "mediciones_latencia.csv", sesion)
             except Exception as e:
                 from .fusion_compartida import enmascarar_texto
                 log.error("No se pudo enviar la alerta: %s", enmascarar_texto(e))
@@ -141,7 +147,7 @@ def modo_panel(a):
             if ahora >= proximo_latido:
                 g.latidos()
                 proximo_latido = ahora + LATIDO_S
-            entregar_listos(g.detectores(), cliente)
+            entregar_listos(g.detectores(), cliente, a.sesion)
             time.sleep(0.05)
     except KeyboardInterrupt:
         log.info("Deteniendo…")
@@ -204,7 +210,7 @@ def modo_manual(a):
     ultimo_informe = time.time()
     try:
         while True:
-            entregar_listos(detectores, cliente)
+            entregar_listos(detectores, cliente, a.sesion)
             if time.time() - ultimo_informe > 60:
                 log.info("Captura: audio %s · video %s", cap_audio.metricas, cap_video.metricas if cap_video else "sin cámara")
                 ultimo_informe = time.time()
