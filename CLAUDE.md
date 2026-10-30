@@ -13,48 +13,41 @@ Diseño pre-experimental G: O1 X O2 (censo N=15, segundo pabellón). Este sistem
 6. No inventar resultados: precisión, recall, F1 y tiempos solo se reportan si salen de una medición real. Lo simulado se marca `origen='simulado'`.
 7. Responder en español, claro y sin relleno.
 
-## Estado actual (etapa 1, terminada y probada)
-- `backend/app/`: API FastAPI + SQLite. `main.py` (endpoints /api/v1: auth/token, alertas, alertas/{id}/resolucion, deshacer, incidentes, indicadores, dispositivos, salud), `db.py`, `security.py` (scrypt + JWT), `seed.py`, `fusion.py` (fusión video+audio y prioridad, función pura probada), `config.py` (secretos autogenerados en `data/`).
-- `frontend/`: panel web en HTML, CSS y JavaScript sin framework (`js/app.js` renderiza por funciones; `js/api.js` cliente). Diseño aprobado por Teo: ver «Diseño».
-- `scripts/simular.py` y `scripts/limpiar_simulados.py`. Pruebas: `cd backend && python -m pytest -q` (13 pasan). Debe seguir en verde.
-- Arranque: `python run.py`. La ingesta de alertas usa `POST /api/v1/alertas` con `X-Api-Key` = contenido de `data/.ingest_key`.
+## Qué es (aclaración de Teo, 30/10/2026)
+Es un **APLICATIVO DE ESCRITORIO** (ventana propia con pywebview, ícono en el escritorio, instalador). El panel en el
+navegador (`python run.py`) es solo ayuda de desarrollo: **toda prueba manual y todo script usan la ventana de escritorio.**
 
-## Lo que falta (tu trabajo): etapas 2, 3 y 4
+## Política de decisiones (trabajo autónomo; registrar en DECISIONES.md)
+- Decidir lo técnico reversible: nombres, estructura, pruebas, correcciones, documentación.
+- Corregir errores y pruebas rotas por cuenta propia (hasta 3 intentos distintos); si no se resuelve, documentar y seguir.
+- En la duda, la opción más segura y simple, con una línea de razón en DECISIONES.md.
+- Puerto libre antes de levantar algo; solo procesos propios; nunca 8080, 8081 ni 8090. Comprobar antes de instalar;
+  instalar solo en `.venv`. No instalar software del sistema (p. ej. Inno Setup): dejar archivos y un script.
+- No cambiar umbral ni mapeo de audio, no inventar métricas, no leer claves ni `.ingest_key`, no usar cuentas de Teo.
+- PARAR y avisar en el resumen final (sin preguntar) solo si algo es irreversible o borra datos, requiere cuenta o
+  credencial, una descarga supera 500 MB, hay que tocar algo fuera de la carpeta, o hay riesgo de privacidad.
+- Si el hook `guardia-credenciales` bloquea algo, no buscar otra vía: documentarlo.
 
-### Requisito nuevo de Teo: multifuente con descubrimiento automático
-El sistema debe **detectar solo** las fuentes disponibles, **mostrarlas en una lista y dejar conectarlas desde el panel**:
-- **Cámaras:** (a) webcam o cámara USB/integrada de la laptop, (b) cámara IP por RTSP/ONVIF en la red local, (c) teléfono usado como cámara (stream RTSP/HTTP de una app como IP Webcam) — si Teo se refería a otro tercer tipo, preguntarle.
-- **Micrófonos:** el integrado, USB, y los **Bluetooth ya emparejados en Windows** (aparecen como entradas de audio del sistema).
-- **Bluetooth:** el escaneo debe **listar los dispositivos Bluetooth cercanos** (por ejemplo con `bleak`), pero aclarar en la interfaz que el emparejamiento se hace en Windows y que solo los de audio entran como micrófono. Las cámaras no se conectan por Bluetooth: no prometerlo.
-- Cada fuente conectada actualiza la tabla `dispositivos` (estado, último latido) y aparece en «Estado del sistema». Si una se desconecta, el panel ya muestra el aviso y la alerta usa solo la evidencia disponible (RN-01).
-
-Propuesta técnica (puedes mejorarla, pero justifica los cambios):
-- Nuevo paquete `edge/` (Python) que corre como proceso aparte y habla con la API por HTTP; no mezclar captura pesada dentro del proceso web.
-- `edge/descubrir.py`: cámaras locales con OpenCV (backend DirectShow en Windows; usar `pygrabber` solo si ya está o es necesario para los nombres), cámaras IP con WS-Discovery/ONVIF y prueba de URL RTSP, audio con `sounddevice` (lista de entradas, marcando las Bluetooth por nombre/API), Bluetooth con `bleak`.
-- API nueva (con rol responsable/admin): `GET /api/v1/descubrimiento` (lanza o consulta el escaneo), `POST /api/v1/dispositivos` (registrar fuente: tipo, nombre, URI o índice, zona), `POST /api/v1/dispositivos/{id}/conectar` y `/desconectar`, `DELETE` con confirmación. Las URIs RTSP con usuario y clave se guardan cifradas con una clave derivada de `SECRET_KEY`; nunca se devuelven completas al frontend.
-- Panel: pantalla «Dispositivos» (o ampliar «Estado del sistema»): botón «Buscar dispositivos», lista de lo encontrado con tipo e icono, botón «Conectar», formulario para agregar una cámara IP a mano (nombre, URL RTSP, zona), estados cargando/vacío/error con solución, y vista previa en vivo de la cámara conectada (MJPEG o instantáneas cada 1 s servidas por la API; sin WebRTC al inicio).
-
-### Etapa 2: captura
-- Video: lectura continua con reconexión automática (backoff), reducción de resolución y muestreo de fotogramas configurable. Medir y registrar el retraso real de captura.
-- Audio: ventanas deslizantes (por ejemplo 1 s con paso de 0,5 s) a 16 kHz mono. Guardar clips cortos (5–10 s alrededor del evento) como evidencia, no el audio continuo.
-- Cada evento lleva `detectado_en` con el instante real del evento (hora de la captura, no la hora de la inferencia) para que I1 TTD sea honesto.
-
-### Etapa 3: modelos
-- **Audio:** clasificador de eventos (empezar con YAMNet o PANNs preentrenados) mapeando a las clases del diseño: rotura de vidrio, grito, choque, disparo. Umbral configurable.
-- **Video:** partir de un detector preentrenado (por ejemplo YOLO nano) para personas/objetos y una regla de «evento visual» documentada. **Dejar claro que es una línea base**: la detección de eventos de seguridad propiamente dicha requiere datos del pabellón; no declarar métricas sin medirlas.
-- Fusión: reutilizar `fusion.py` (agrupa por zona y ventana de 3 s). Emitir la alerta con `POST /api/v1/alertas`, adjuntando `evidencia_video` y `evidencia_audio` (archivos en `data/evidencias/`, servidos por la API con autenticación) para que el panel los reproduzca.
-- Objetivo de diseño RNF-01: alerta visible en ≤ 5 s desde la detección. Medirlo y mostrarlo en Indicadores (I1); si no se cumple, informar el cuello de botella real.
-- Aceleración: usar la GPU (CUDA) solo si está disponible; si no, CPU con modelos pequeños. Comprobar antes qué hay instalado.
-
-### Etapa 4: medición para la tesis
-- Exportar a CSV las alertas con sus marcas de tiempo (`detectado_en`, `generado_en`, `resuelto_en`), decisión y clics, para el pretest/postest.
-- Herramienta de **etiquetado** (verdad de campo): marcar si el evento fue real para poder calcular recall y F1 (hoy solo hay precisión = confirmadas ÷ resueltas).
-- Registro de disponibilidad (RNF-02 ≥ 95 %) a partir de los latidos de los dispositivos.
-
-### Etapa 5: paso al servidor (sustentación)
-Dockerfile + `docker-compose` (API, proxy Caddy con HTTPS, PostgreSQL), variables de entorno para secretos, guía de despliegue en el README. Probar en local antes. La captura se queda en el equipo edge; el servidor recibe alertas y sirve el panel.
+## Estado actual (30/10/2026) — detalle en README.md, MANUAL.md y DECISIONES.md
+- `backend/app/`: API FastAPI + SQLite (alertas, incidentes, indicadores I1, I1 visible, I2–I4, dispositivos,
+  fuentes con direcciones cifradas, evidencias, medición: etiquetado, eventos reales, precisión/recall/F1, CSV).
+- `edge/`: captura de audio y video, YAMNet (audio), VideoMAE RWF-2000 (video, LÍNEA BASE), coordinador de zona,
+  gestor sincronizado con el panel, servicio detenible (`edge/servicio.py`).
+- `escritorio/`: aplicativo (ventana + API + edge en un proceso), instancia única, puerto libre, datos en
+  `%LOCALAPPDATA%\SistemaVigilanciaUDH`, ícono, `.spec` de PyInstaller; `instalador/`: Inno Setup por usuario.
+- Pruebas: `cd backend && ..\.venv\Scripts\python -m pytest -q`; `.venv\Scripts\python -m pytest edge/tests escritorio/tests -q`;
+  `set TZ=America/Lima&& node --test frontend/tests/tiempo.test.mjs`. Deben seguir en verde.
+- Del pedido original quedan **sin implementar** (ver Pendientes): disponibilidad RNF-02 calculada a partir de los
+  latidos (hoy solo se guarda el último latido), escaneo Bluetooth cercano con `bleak` (hoy solo se marcan los
+  micrófonos Bluetooth ya emparejados), vista previa en vivo de la cámara, búsqueda ONVIF y la etapa 5 (Docker).
 
 ## Pendientes acordados con Teo (no hacer sin su OK)
+- **Condición de uso del audio:** apagar las «Mejoras de audio» de Windows del micrófono (con ellas, el Intel Smart
+  Sound entregó silencio digital). Está en README y MANUAL; repetirlo en toda guía de prueba.
+- **RNF-02 (disponibilidad ≥ 95 %):** guardar el historial de latidos (hoy solo `ultimo_latido`) y calcular el % por fuente.
+- **Bluetooth cercano (`bleak`) y vista previa en vivo de la cámara** (MJPEG o instantánea cada 1 s): del pedido original, no hechos.
+- **Etapa 5:** Docker + compose (API, Caddy HTTPS, PostgreSQL), SSE/WebSocket en lugar del sondeo, `panel_activo` en la base.
+- **`.claude/settings.json`:** el hook bloqueó crearlo (nombraba carpetas de navegadores); Teo lo crea a mano (ver DECISIONES.md).
 - **Calibración del audio:** calibrar el umbral por clase con un conjunto de calibración y otro de evaluación
   separados (sin mezclar grabaciones), y medir las falsas alarmas con audio ambiente del pabellón. Hasta
   entonces no cambiar el umbral (0,50) ni el mapeo de clases de `edge/clasificador_audio.py`.

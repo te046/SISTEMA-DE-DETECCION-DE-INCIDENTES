@@ -54,3 +54,14 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
   `.js` viejo tras una actualización (ocurrió en la revisión de desarrollo con el navegador).
 - La pantalla se revisó con Playwright sobre datos temporales (revisión de desarrollo, no reemplaza la prueba
   manual en la ventana de escritorio).
+
+## d. Documentación
+- README reorganizado alrededor del aplicativo de escritorio (el navegador queda como ayuda de desarrollo), con los
+  límites al principio: video línea base, audio sin calibrar, condición de apagar las Mejoras de audio.
+- MANUAL.md nuevo: instalación, vigilante, responsable y guion de sustentación con lo que SÍ y lo que NO se puede afirmar.
+- CLAUDE.md: aclaración «aplicativo de escritorio», política de decisiones, estado real y pendientes honestos del
+  pedido original no implementados (RNF-02 por latidos, Bluetooth con `bleak`, vista previa de cámara, ONVIF, etapa 5).
+
+## e. Etapa 5 (Docker, Caddy, PostgreSQL)
+- **No se implementó** por tiempo: queda como trabajo futuro documentado (README «Trabajo futuro» y CLAUDE.md).
+  Requiere además adaptar la base a PostgreSQL y mover `panel_activo` a la base (hoy en memoria).
