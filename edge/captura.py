@@ -4,6 +4,7 @@ Ambas clases corren en hilos propios, escriben en los búferes con la hora real 
 exponen `vivo` para los latidos (RNF-02). Los retrasos medidos quedan en `metricas`.
 """
 import logging
+import os
 import re
 import threading
 import time
@@ -11,6 +12,11 @@ import time
 import numpy as np
 
 from .buffers import BufferAudio, BufferVideo
+from .fusion_compartida import enmascarar_texto
+
+# OpenCV/FFmpeg pueden imprimir la dirección de la cámara (con usuario y clave) en sus propios mensajes.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")     # AV_LOG_QUIET
 
 log = logging.getLogger("edge.captura")
 PATRON_BLUETOOTH = re.compile(r"bluetooth|hands-?free|headset|airpods|buds", re.I)
@@ -26,11 +32,12 @@ def esperas_backoff(inicial: float = 1.0, maximo: float = 30.0):
 
 LIMITE_SIN_AUDIO_S = 3.0      # si ya entregaba audio y deja de hacerlo por más de esto, se considera caído
 MARGEN_ARRANQUE_S = 5.0       # tiempo que se espera el primer bloque tras abrir (MME puede tardar ~2 s)
+MARGEN_ARRANQUE_VIDEO_S = 10.0
 
 
-def audio_vivo(ahora: float, abierto_en: float | None, ultimo_bloque: float,
+def fuente_viva(ahora: float, abierto_en: float | None, ultimo_bloque: float,
                limite_s: float = LIMITE_SIN_AUDIO_S, margen_arranque_s: float = MARGEN_ARRANQUE_S) -> bool:
-    """¿El micrófono está entregando audio? Distingue el arranque (aún sin bloques) de un corte real."""
+    """¿La fuente (micrófono o cámara) está entregando datos? Distingue el arranque (aún sin bloques) de un corte real."""
     if abierto_en is None:
         return False
     if ultimo_bloque >= abierto_en:                    # ya llegó audio desde esta apertura
@@ -45,6 +52,7 @@ class CapturaAudio:
         self.buffer, self.dispositivo, self.bloque_s = buffer, dispositivo, bloque_s
         self._detener = threading.Event()
         self._abierto_en: float | None = None
+        self.ultimo_error: str | None = None
         self._ultimo_bloque = 0.0
         self._latencia = 0.0
         self.metricas = {"latencia_entrada_ms": None, "reconexiones": 0}
@@ -52,7 +60,7 @@ class CapturaAudio:
 
     @property
     def vivo(self) -> bool:
-        return audio_vivo(time.time(), self._abierto_en, self._ultimo_bloque)
+        return fuente_viva(time.time(), self._abierto_en, self._ultimo_bloque)
 
     def iniciar(self):
         self._hilo.start()
@@ -89,7 +97,8 @@ class CapturaAudio:
                 self._abierto_en = None                  # cerrado: los latidos lo informan como desconectado
                 espera = next(esperas)
                 self.metricas["reconexiones"] += 1
-                log.warning("Micrófono no disponible (%s). Reintento en %.0f s.", e, espera)
+                self.ultimo_error = enmascarar_texto(e)
+                log.warning("Micrófono no disponible (%s). Reintento en %.0f s.", self.ultimo_error, espera)
                 self._detener.wait(espera)
 
 
@@ -98,14 +107,22 @@ class CapturaVideo:
 
     def __init__(self, buffer: BufferVideo, fuente: int | str = 0, fps: float = 10.0, ancho: int = 640):
         self.buffer, self.fuente, self.fps, self.ancho = buffer, fuente, fps, ancho
+        # Lo único que se escribe en consola o se envía al servidor: nunca la dirección completa.
+        self.descripcion = f"índice {fuente}" if isinstance(fuente, int) else enmascarar_texto(fuente)
+        self.ultimo_error: str | None = None
         self._detener = threading.Event()
+        self._abierta_en: float | None = None
         self._ultima_foto = 0.0
         self.metricas = {"lectura_ms": None, "fps_real": None, "reconexiones": 0}
         self._hilo = threading.Thread(target=self._bucle, name="captura-video", daemon=True)
 
+    def __repr__(self):
+        return f"CapturaVideo({self.descripcion})"
+
     @property
     def vivo(self) -> bool:
-        return time.time() - self._ultima_foto < 3.0
+        # RTSP puede tardar varios segundos en entregar la primera imagen: margen mayor que el del micrófono.
+        return fuente_viva(time.time(), self._abierta_en, self._ultima_foto, margen_arranque_s=MARGEN_ARRANQUE_VIDEO_S)
 
     def iniciar(self):
         self._hilo.start()
@@ -130,7 +147,8 @@ class CapturaVideo:
             cap = None
             try:
                 cap = self._abrir()
-                log.info("Cámara abierta: %s", self.fuente)
+                self._abierta_en, self.ultimo_error = time.time(), None
+                log.info("Cámara abierta: %s", self.descripcion)
                 esperas = esperas_backoff()
                 periodo, siguiente, lecturas, fallos = 1.0 / self.fps, 0.0, [], 0
                 inicio, n = time.time(), 0
@@ -162,7 +180,8 @@ class CapturaVideo:
             except Exception as e:
                 espera = next(esperas)
                 self.metricas["reconexiones"] += 1
-                log.warning("Cámara no disponible (%s). Reintento en %.0f s.", e, espera)
+                self._abierta_en, self.ultimo_error = None, enmascarar_texto(e)
+                log.warning("Cámara %s no disponible (%s). Reintento en %.0f s.", self.descripcion, self.ultimo_error, espera)
                 self._detener.wait(espera)
             finally:
                 if cap is not None:
@@ -170,7 +189,10 @@ class CapturaVideo:
 
 
 def listar_fuentes(max_camaras: int = 5) -> dict:
-    """Lista rápida para la consola. El descubrimiento completo (IP, ONVIF, Bluetooth) llega en el paso de dispositivos."""
+    """Entradas de audio y cámaras locales que entregan imagen (max_camaras=0: solo audio, es instantáneo).
+
+    Limitación conocida: PortAudio lee la lista de audio al arrancar el edge; un micrófono enchufado
+    después aparece recién al reiniciar el edge (refrescarla cortaría las capturas abiertas)."""
     import cv2
     import sounddevice as sd
     microfonos = []

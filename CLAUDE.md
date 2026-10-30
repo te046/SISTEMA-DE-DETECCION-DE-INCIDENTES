@@ -54,6 +54,18 @@ Propuesta técnica (puedes mejorarla, pero justifica los cambios):
 ### Etapa 5: paso al servidor (sustentación)
 Dockerfile + `docker-compose` (API, proxy Caddy con HTTPS, PostgreSQL), variables de entorno para secretos, guía de despliegue en el README. Probar en local antes. La captura se queda en el equipo edge; el servidor recibe alertas y sirve el panel.
 
+## Pendientes acordados con Teo (no hacer sin su OK)
+- **Calibración del audio:** calibrar el umbral por clase con un conjunto de calibración y otro de evaluación
+  separados (sin mezclar grabaciones), y medir las falsas alarmas con audio ambiente del pabellón. Hasta
+  entonces no cambiar el umbral (0,50) ni el mapeo de clases de `edge/clasificador_audio.py`.
+  Contexto: con `python -m edge --microfono 1 --diagnostico` el micrófono Intel Smart Sound de la laptop entregó
+  muchos tramos de −90 dBFS exactos y ninguna clase del mapeo; la causa (¿supresión de ruido de Windows?) no está probada.
+  La ruta WDM-KS (sin efectos de Windows) también queda pendiente.
+- **Cámaras IP automáticas:** búsqueda ONVIF/WS-Discovery de cámaras en la red local. Hoy se agregan a mano en
+  «Buscar dispositivos» (dirección validada y cifrada).
+- **Webcam local:** en la laptop de Teo no se detecta (permiso de Windows, obturador u otra app). Ese camino solo
+  está cubierto por pruebas automáticas.
+
 ## Orden sugerido
 1. Descubrimiento y registro de dispositivos (API + panel), con pruebas. 2. Captura de video y audio con una webcam y el micrófono de la laptop. 3. Audio YAMNet → alertas de punta a punta. 4. Video base → fusión. 5. Cámaras IP/RTSP y Bluetooth. 6. Medición y exportación. 7. Docker. Al terminar cada paso: pruebas en verde, README actualizado y un resumen corto para Teo.
 

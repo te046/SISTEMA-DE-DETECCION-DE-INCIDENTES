@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import jwt as pyjwt
 
-from . import config, db, security
+from . import config, db, fuentes, security
 
 from contextlib import asynccontextmanager
 
@@ -37,6 +38,16 @@ def parse(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
+
+
+@app.exception_handler(RequestValidationError)
+async def datos_invalidos(_req, exc: RequestValidationError):
+    """Por defecto FastAPI repite lo recibido en el 422; aquí solo se nombran los campos, para no
+    devolver nunca una dirección con usuario y clave."""
+    campos = sorted({str(e["loc"][-1]) for e in exc.errors() if e.get("loc")})
+    return JSONResponse(status_code=422, content={"detail": {
+        "mensaje": "Hay datos que no son válidos" + (f": {', '.join(campos)}." if campos else "."),
+        "solucion": "Revise esos campos e intente de nuevo."}})
 
 
 def error(status: int, que_paso: str, como_resolver: str):
@@ -323,6 +334,8 @@ def ver_evidencia(nombre: str, u=Depends(usuario_actual)):
 def salud():
     return {"estado": "ok", "version": app.version}
 
+
+fuentes.registrar(app, usuario_actual, requiere_ingesta, error)   # «Buscar dispositivos» y canal del edge
 
 # El panel web se sirve desde el mismo servidor (carpeta frontend/).
 if config.FRONTEND_DIR.exists():

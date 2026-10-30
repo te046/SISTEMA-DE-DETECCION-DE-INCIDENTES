@@ -13,7 +13,11 @@ const S = {
   msg: null, ayuda: false, errLogin: "", verClave: false, reproduciendo: false,
   vistas: new Set(), usuarioCampo: "", claveCampo: "",
   medios: {},               // url de evidencia -> "cargando" | "error" | blob:
+  fuentes: null,            // respuesta de GET /fuentes
+  zonaNueva: "Zona 1", ocupado: null, errRed: "",
+  red: { nombre: "", clase: "ip", direccion: "", usuario: "", zona: "Zona 1" },   // sin clave: se lee del campo al guardar
 };
+const ZONAS = ["Zona 1", "Zona 2", "Zona 3", "Zona 4"];
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (n) => (n === null || n === undefined ? "—" : String(n).replace(".", ",") + " %");
@@ -26,6 +30,9 @@ const ICON = {
   incidentes: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/>',
   indicadores: '<path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/>',
   estado: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/>',
+  buscar: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  camara: '<path d="M15 10l5-3v10l-5-3"/><rect x="3" y="6" width="12" height="12" rx="2"/>',
+  audio: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
 };
 const svg = (k) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
@@ -109,9 +116,56 @@ async function ir(p) {
     if (p === "incidentes") S.incs = await llamar("/incidentes");
     if (p === "indicadores") S.ind = await llamar("/indicadores");
     if (p === "estado") S.devs = await llamar("/dispositivos");
+    if (p === "dispositivos") S.fuentes = await llamar("/fuentes");
     if (p === "panel") await cargarPanel();
   } catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
   render();
+}
+
+// ---------------------------------------------------------------- buscar dispositivos
+const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function cargarFuentes() {
+  try { S.fuentes = await llamar("/fuentes"); } catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
+}
+
+async function buscarDispositivos() {
+  try {
+    await llamar("/fuentes/buscar", { metodo: "POST" });
+    S.fuentes = { ...(S.fuentes || { fuentes: [] }), buscando: true }; S.msg = null; render();
+    for (let i = 0; i < 18 && S.pantalla === "dispositivos"; i++) {      // el edge responde en ≤ 2 s + escaneo
+      await pausa(1000);
+      await cargarFuentes();
+      if (!S.fuentes?.buscando) break;
+    }
+  } catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
+  render();
+}
+
+async function accionFuente(clave, fn) {
+  S.ocupado = clave; render();
+  try { await fn(); await cargarFuentes(); S.msg = null; }
+  catch (e) { msg(e.message + " " + (e.solucion || ""), "err"); }
+  S.ocupado = null; render();
+}
+
+const conectarLocal = (clave) => accionFuente(clave, () => llamar("/fuentes/locales", { metodo: "POST", cuerpo: { clave, zona: S.zonaNueva } }));
+const conectarFuente = (id, clave) => accionFuente(clave, () => llamar(`/fuentes/${id}/conectar`, { metodo: "POST" }));
+const desconectarFuente = (id, clave) => accionFuente(clave, () => llamar(`/fuentes/${id}/desconectar`, { metodo: "POST" }));
+
+async function agregarRed() {
+  const r = S.red;
+  if (!r.nombre.trim()) { S.errRed = "Escriba un nombre, por ejemplo «Cámara pasillo»."; return render(); }
+  if (!r.direccion.trim()) { S.errRed = "Escriba la dirección, por ejemplo rtsp://192.168.1.20:554/stream."; return render(); }
+  S.errRed = ""; S.ocupado = "red"; render();
+  const clave = document.getElementById("red-pwd")?.value || null;   // la clave no se guarda en el estado del panel
+  try {
+    const f = await llamar("/fuentes/red", { metodo: "POST", cuerpo: { ...r, usuario: r.usuario || null, clave } });
+    S.red = { nombre: "", clase: "ip", direccion: "", usuario: "", zona: r.zona };
+    await cargarFuentes();
+    msg(`«${f.nombre}» guardada. Pulse «Conectar» cuando quiera usarla.`, "ok");
+  } catch (e) { S.errRed = e.message + " " + (e.solucion || ""); }
+  S.ocupado = null; render();
 }
 
 async function alternarDispositivo(id, activo) {
@@ -155,7 +209,7 @@ function vShell(titulo, contenido) {
   const ini = u.nombre.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return `<aside class="side"><img src="logo-udh.png" alt="Universidad de Huánuco">
     <div><div style="font-weight:800;font-size:18px;line-height:1.25">Vigilancia multimodal</div><div class="lbl">Segundo pabellón</div></div>
-    <nav aria-label="Menú principal">${nav("panel", "Alertas", "alertas", n ? `<span class="badge">${n}</span>` : "")}${nav("incidentes", "Incidentes", "incidentes")}${nav("indicadores", "Indicadores", "indicadores")}${nav("estado", "Estado del sistema", "estado")}</nav>
+    <nav aria-label="Menú principal">${nav("panel", "Alertas", "alertas", n ? `<span class="badge">${n}</span>` : "")}${nav("incidentes", "Incidentes", "incidentes")}${nav("indicadores", "Indicadores", "indicadores")}${nav("estado", "Estado del sistema", "estado")}${nav("dispositivos", "Buscar dispositivos", "buscar")}</nav>
     <div class="note"><b>Sistema v1.0</b><span class="lbl">Las alertas «simuladas» se marcan como tales.</span></div></aside>
     <div class="wrap">
     <header class="topbar"><p class="lbl" style="margin:0">Inicio › ${esc(titulo)}</p>
@@ -258,11 +312,73 @@ function vEstado() {
     <p class="lbl" style="margin:0">Metas de diseño: alerta en ≤ 5 s · disponibilidad ≥ 95 % · confirmar o descartar en ≤ 3 clics.</p></section>`;
 }
 
+const ESTADO_FUENTE = {          // el estado nunca solo por color: símbolo + texto
+  conectada: ["ok", "● Conectada"], disponible: ["neutral", "○ Disponible"], error: ["off", "▲ Error"], no_sirve: ["neutral", "— No sirve"],
+};
+
+function filaFuente(f, puede) {
+  const [clase, texto] = ESTADO_FUENTE[f.estado] || ESTADO_FUENTE.disponible;
+  const etiquetas = [f.bluetooth ? "Bluetooth" : "", f.clase === "ip" ? "Cámara IP" : f.clase === "telefono" ? "Teléfono" : "", f.zona || ""].filter(Boolean);
+  const ocupada = S.ocupado === f.clave;
+  let boton = "";
+  if (puede && f.estado !== "no_sirve") {
+    if (f.conectada) boton = `<button class="btn btn-ghost btn-s" data-desc="${f.id}" data-clave="${esc(f.clave)}" ${ocupada ? "disabled" : ""}>Desconectar</button>`;
+    else boton = `<button class="btn btn-primary btn-s" ${f.id ? `data-con="${f.id}"` : ""} data-clave="${esc(f.clave)}" ${ocupada ? "disabled" : ""}>${ocupada ? "Conectando…" : "Conectar"}</button>`;
+  }
+  return `<li class="dev"><span class="dev-ic" aria-hidden="true">${svg(f.tipo === "camara" ? "camara" : "audio")}</span>
+    <span class="mid"><span style="font-weight:700">${esc(f.nombre)}</span>
+      ${etiquetas.length ? `<span class="lbl">${esc(etiquetas.join(" · "))}</span>` : ""}
+      ${f.direccion ? `<span class="lbl mono">${esc(f.direccion)}</span>` : ""}
+      ${f.motivo ? `<span class="${f.estado === "error" ? "dev-err" : "lbl"}">${esc(f.motivo)}</span>` : ""}</span>
+    <span class="pill ${clase}">${texto}</span>${boton}</li>`;
+}
+
+function vDispositivos() {
+  const d = S.fuentes || { fuentes: [], puede_cambiar: false };
+  const puede = d.puede_cambiar, todas = d.fuentes || [];
+  const cams = todas.filter((f) => f.tipo === "camara"), mics = todas.filter((f) => f.tipo === "audio");
+  const opZona = (sel) => ZONAS.map((z) => `<option ${z === sel ? "selected" : ""}>${z}</option>`).join("");
+  const lista = (titulo, items, vacio) => `<div class="card dev-list"><h2>${titulo}</h2>${items.length ? `<ul class="devs">${items.map((f) => filaFuente(f, puede)).join("")}</ul>` : vacio}</div>`;
+  const sinCamaras = d.ultima_busqueda && !cams.some((f) => f.clase === "local")
+    ? `<div class="help"><strong>No se encontró ninguna cámara de este equipo.</strong><ul>
+        <li>Abra el obturador o pulse la tecla de cámara del teclado.</li>
+        <li>Windows: Configuración › Privacidad › Cámara › permita el acceso a las aplicaciones de escritorio.</li>
+        <li>Cierre otras aplicaciones que usen la cámara (Teams, Zoom, Cámara) y pulse «Buscar».</li></ul></div>` : "";
+  const avisos = !d.edge_activo
+    ? '<div role="alert" class="warn"><strong>El módulo de captura no está abierto.</strong> Ábralo con <b>python -m edge</b> y pulse «Buscar».</div>'
+    : d.busqueda_sin_respuesta ? '<div role="alert" class="warn"><strong>La búsqueda no respondió.</strong> Revise que el módulo de captura siga abierto y pulse «Buscar» otra vez.</div>' : "";
+  const r = S.red;
+  const formRed = puede ? `<div class="card dev-list"><h2>Agregar cámara IP o teléfono</h2>
+    <form class="dev-form" id="f-red" novalidate autocomplete="off">
+      <div class="field"><label for="red-nombre">Nombre</label><input id="red-nombre" type="text" value="${esc(r.nombre)}" placeholder="Cámara pasillo"></div>
+      <div class="field"><label for="red-clase">Tipo</label><select id="red-clase"><option value="ip" ${r.clase === "ip" ? "selected" : ""}>Cámara IP</option><option value="telefono" ${r.clase === "telefono" ? "selected" : ""}>Teléfono como cámara</option></select></div>
+      <div class="field wide"><label for="red-dir">Dirección</label><input id="red-dir" type="text" spellcheck="false" value="${esc(r.direccion)}" placeholder="rtsp://192.168.1.20:554/stream" aria-describedby="red-dir-h"><span id="red-dir-h" class="lbl">rtsp, rtsps, http o https. Teléfono: http://IP:puerto/video</span></div>
+      <div class="field"><label for="red-usr">Usuario <span class="lbl">(opcional)</span></label><input id="red-usr" type="text" spellcheck="false" autocomplete="off" value="${esc(r.usuario)}"></div>
+      <div class="field"><label for="red-pwd">Clave <span class="lbl">(opcional)</span></label><input id="red-pwd" type="password" autocomplete="new-password" value=""></div>
+      <div class="field"><label for="red-zona">Zona</label><select id="red-zona">${opZona(r.zona)}</select></div>
+      ${S.errRed ? `<div role="alert" class="err-box wide"><strong>No se guardó.</strong> ${esc(S.errRed)}</div>` : ""}
+      <div class="wide dev-form-pie"><button type="submit" class="btn btn-primary" ${S.ocupado === "red" ? "disabled" : ""}>${S.ocupado === "red" ? "Guardando…" : "Guardar"}</button>
+        <span class="lbl">Se guarda cifrada. Se conecta al pulsar «Conectar».</span></div>
+    </form></div>` : "";
+  return `<section style="display:flex;flex-direction:column;gap:20px">
+    <div class="dev-top"><div><h1 class="h-title">Buscar dispositivos</h1><p class="lbl h-sub">Cámaras y micrófonos disponibles</p></div>
+      <div class="dev-acc">${puede ? `<div class="field"><label for="zona-nueva">Conectar en</label><select id="zona-nueva">${opZona(S.zonaNueva)}</select></div>` : ""}
+      <button class="btn btn-primary" data-a="buscar" ${d.buscando ? "disabled" : ""}>${d.buscando ? '<span class="spinner spinner-s" aria-hidden="true"></span>Buscando…' : svg("buscar") + "Buscar"}</button></div></div>
+    ${avisos}
+    ${d.buscando ? '<p class="lbl" role="status" style="margin:0">Buscando cámaras y micrófonos… puede tardar unos segundos.</p>' : ""}
+    ${!todas.length && !d.buscando ? '<div class="card empty"><b>Aún no hay dispositivos en la lista</b><span class="lbl">Pulse «Buscar» para ver las cámaras y los micrófonos.</span></div>' : ""}
+    ${todas.length ? lista("Cámaras", cams, '<p class="lbl" style="margin:0">Ninguna en la lista.</p>') : ""}${sinCamaras}
+    ${todas.length ? lista("Micrófonos", mics, '<p class="lbl" style="margin:0">Ninguno en la lista.</p>') : ""}
+    ${todas.length ? '<p class="lbl" style="margin:0">Los Bluetooth se emparejan en Windows; aquí aparecen solo los de audio.</p>' : ""}
+    ${formRed}
+    ${puede ? "" : '<p class="lbl" style="margin:0">Solo responsables y administradores pueden conectar dispositivos.</p>'}</section>`;
+}
+
 function render() {
   const foco = document.activeElement?.id;
   if (!S.ses) { $app.innerHTML = vLogin(); enlazarLogin(); if (foco) document.getElementById(foco)?.focus(); return; }
   if (S.cargando) { $app.innerHTML = '<div class="wrap"><main id="contenido"><section class="card empty" aria-busy="true"><div class="spinner" aria-hidden="true"></div><b>Cargando alertas del turno…</b><span class="lbl">Conectando con el servidor.</span></section></main></div>'; return; }
-  const v = { panel: ["Alertas", vPanel], incidentes: ["Incidentes", vIncidentes], indicadores: ["Indicadores", vIndicadores], estado: ["Estado del sistema", vEstado] }[S.pantalla];
+  const v = { panel: ["Alertas", vPanel], incidentes: ["Incidentes", vIncidentes], indicadores: ["Indicadores", vIndicadores], estado: ["Estado del sistema", vEstado], dispositivos: ["Buscar dispositivos", vDispositivos] }[S.pantalla];
   $app.innerHTML = vShell(v[0], v[1]()) + '<div id="anuncio" class="sr" role="status" aria-live="polite"></div>';
   enlazar();
 }
@@ -282,7 +398,21 @@ function enlazar() {
   }));
   $app.querySelectorAll("[data-f]").forEach((b) => b.addEventListener("click", () => { S.filtro = Number(b.dataset.f); S.selId = null; S.clics = 0; render(); }));
   $app.querySelectorAll("[data-disp]").forEach((b) => b.addEventListener("click", () => alternarDispositivo(Number(b.dataset.disp), b.dataset.activo === "1")));
-  const acc = { confirmar: () => resolver("confirmar"), descartar: () => resolver("descartar"), deshacer, salir: () => cerrarSesion(), "cerrar-msg": () => { S.msg = null; render(); }, ayuda: () => { S.ayuda = !S.ayuda; if (S.pantalla !== "panel") S.pantalla = "panel"; render(); } };
+  $app.querySelectorAll("[data-clave]").forEach((b) => b.addEventListener("click", () => {
+    const clave = b.dataset.clave;
+    if (b.dataset.desc) desconectarFuente(Number(b.dataset.desc), clave);
+    else if (b.dataset.con) conectarFuente(Number(b.dataset.con), clave);
+    else conectarLocal(clave);
+  }));
+  const vincular = (id, fn, ev = "input") => document.getElementById(id)?.addEventListener(ev, (e) => fn(e.target.value));
+  vincular("zona-nueva", (v) => (S.zonaNueva = v), "change");
+  vincular("red-nombre", (v) => (S.red.nombre = v));
+  vincular("red-dir", (v) => (S.red.direccion = v));
+  vincular("red-usr", (v) => (S.red.usuario = v));
+  vincular("red-clase", (v) => (S.red.clase = v), "change");
+  vincular("red-zona", (v) => (S.red.zona = v), "change");
+  document.getElementById("f-red")?.addEventListener("submit", (e) => { e.preventDefault(); agregarRed(); });
+  const acc = { buscar: buscarDispositivos, confirmar: () => resolver("confirmar"), descartar: () => resolver("descartar"), deshacer, salir: () => cerrarSesion(), "cerrar-msg": () => { S.msg = null; render(); }, ayuda: () => { S.ayuda = !S.ayuda; if (S.pantalla !== "panel") S.pantalla = "panel"; render(); } };
   $app.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", acc[b.dataset.a]));
 }
 

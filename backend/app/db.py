@@ -47,6 +47,26 @@ CREATE TABLE IF NOT EXISTS incidentes (
   lugar TEXT NOT NULL, tipo TEXT NOT NULL,
   registrado_por TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS fuentes (    -- fuentes elegidas en «Buscar dispositivos»
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clave TEXT UNIQUE NOT NULL,          -- local: la del inventario del edge; manual: 'ip:<uuid>'
+  tipo TEXT NOT NULL CHECK (tipo IN ('camara','audio')),
+  clase TEXT NOT NULL CHECK (clase IN ('local','ip','telefono')),
+  nombre TEXT UNIQUE NOT NULL,
+  zona TEXT NOT NULL,
+  uri_cifrada TEXT,                    -- solo ip/telefono: dirección completa cifrada (nunca en texto plano)
+  uri_visible TEXT,                    -- la misma dirección sin usuario, clave ni parámetros
+  conectada INTEGER NOT NULL DEFAULT 0,
+  error TEXT,                          -- último error informado por el edge (ya enmascarado)
+  actualizado_en TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inventario_edge (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  datos TEXT NOT NULL DEFAULT '{}',    -- JSON con micrófonos y cámaras detectados
+  actualizado_en TEXT,
+  busqueda_pedida_en TEXT,
+  edge_visto_en TEXT                   -- última consulta del edge (para saber si está abierto)
+);
 CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   momento TEXT NOT NULL, usuario TEXT, accion TEXT NOT NULL, detalle TEXT

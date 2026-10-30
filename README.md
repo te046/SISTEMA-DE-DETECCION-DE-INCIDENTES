@@ -1,12 +1,15 @@
-# Sistema de vigilancia multimodal · UDH (etapas 1–3)
+# Sistema de vigilancia multimodal · UDH (etapas 1–3 y búsqueda de dispositivos)
 
 API (FastAPI + SQLite) y panel web (HTML, CSS y JavaScript) del módulo M06, con login, roles, alertas,
 incidentes, indicadores I1–I4 y estado de dispositivos. Desde las etapas 2 y 3, el **módulo edge** (`edge/`)
 captura audio y video de la laptop, clasifica el audio con YAMNet y envía alertas con su evidencia (clip de
 audio y de video) que el vigilante reproduce en el panel.
 
-**Aún no incluye:** el modelo de video (agresión física), el descubrimiento de cámaras IP, del teléfono y de
-Bluetooth desde el panel, la exportación para la tesis, la app de escritorio ni Docker.
+Desde el panel, la pantalla **«Buscar dispositivos»** lista las cámaras y los micrófonos del equipo y permite
+conectarlos. También se pueden agregar cámaras IP o un teléfono por su dirección.
+
+**Aún no incluye:** el modelo de video (agresión física), la búsqueda automática de cámaras IP (ONVIF), la
+exportación para la tesis, la app de escritorio ni Docker. Los pendientes acordados están en `CLAUDE.md`.
 
 ## Instalar (una sola vez, dentro de esta carpeta)
 1. Python 3.10 o superior.
@@ -21,13 +24,44 @@ Bluetooth desde el panel, la exportación para la tesis, la app de escritorio ni
    - La primera vez crea la base y las cuentas, y **muestra las claves una sola vez**. Para fijar una clave:
      `set CLAVE_RESPONSABLE=su-clave` antes de la primera ejecución.
 2. **Captura y detección**, en otra consola: `python -m edge`
-   - `python -m edge --listar` muestra los micrófonos (marca los Bluetooth) y las cámaras con su índice.
-   - Ejemplo: `python -m edge --microfono 2 --camara 0 --zona "Zona 1"`. Use `--camara ninguna` para solo audio.
+   - **Modo panel (por defecto):** el edge consulta la API cada 2 s y abre o cierra las fuentes que se
+     conecten o desconecten en «Buscar dispositivos», **sin reiniciarlo**.
+   - **Modo manual (pruebas y calibración):** `python -m edge --microfono 1 --camara ninguna`. Cualquiera
+     de las dos opciones activa este modo.
+   - `python -m edge --listar` muestra el mismo inventario que ve el panel.
    - `--diagnostico` imprime en la consola, una vez por segundo, el nivel del micrófono (dBFS) y las 3 clases
      de AudioSet con mayor puntaje. Sirve para calibrar el umbral y el mapeo. No guarda ni envía audio.
-   - Al arrancar registra el micrófono y la cámara en «Estado del sistema» y envía latidos cada 5 s. Si una
-     fuente falla, el panel la muestra desconectada y el edge reintenta con espera creciente (1, 2, 4… 30 s).
+   - Cada fuente conectada aparece en «Estado del sistema» y envía latidos cada 5 s. Si falla, el panel la
+     muestra con error y el edge reintenta con espera creciente (1, 2, 4… 30 s).
 3. Abra la dirección que imprimió `run.py`. La documentación de la API está en `/docs`.
+
+## Buscar dispositivos
+- **Buscar:** responde al instante con «Buscando…». El edge hace el escaneo en su próxima consulta (≤ 2 s;
+  probar las cámaras tarda 1–4 s más). Si el edge no está abierto, el panel lo dice y explica cómo abrirlo.
+- **Micrófonos:** el mismo micrófono aparece hasta cuatro veces en Windows (MME, DirectSound, WASAPI y WDM-KS);
+  se muestra una sola vez y se captura por MME. Se marcan los **Bluetooth** (ya emparejados en Windows) y los
+  que **no sirven**: Stereo Mix (graba lo que suena en los parlantes), entradas virtuales, salidas de audio y
+  los que solo existen por WDM-KS (ruta aún no soportada).
+- **Cámaras IP y teléfono:** se agregan con nombre, dirección (`rtsp`, `rtsps`, `http` o `https`), usuario y
+  clave opcionales (en campos aparte) y zona. **Guardar no conecta:** solo «Conectar» lo hace.
+  Ejemplo de teléfono con una app tipo IP Webcam: `http://192.168.1.30:8080/video`.
+- **Usuario y clave:** la dirección completa se guarda **cifrada** (Fernet, con una clave derivada de
+  `SECRET_KEY`). El panel, la consola, los errores y la auditoría solo muestran la versión enmascarada
+  (`rtsp://***@192.168.1.20:554/stream`). La dirección completa solo la entrega
+  `GET /api/v1/edge/fuentes/{id}/direccion`, que acepta la clave de ingesta del edge y **nunca** la sesión del panel.
+- **Si `SECRET_KEY` cambia o se pierde:** las direcciones guardadas ya no se pueden descifrar. La cámara aparece
+  con «▲ Error» y el aviso «Vuelva a agregar la cámara»; el sistema sigue funcionando.
+- **Sin cámaras:** si no se detecta ninguna, el panel sugiere revisar el obturador o la tecla de cámara, el
+  permiso de Windows (Privacidad › Cámara › aplicaciones de escritorio) y otras aplicaciones que la usen.
+- Conectar, desconectar y agregar solo lo pueden hacer los roles responsable y administrador. Los vigilantes ven la lista.
+
+**Cómo se probó:** la cámara local se probó **solo con pruebas automáticas**, porque en la laptop de desarrollo
+la webcam todavía no se detecta. Las cámaras IP y el teléfono también se probaron solo con pruebas automáticas
+y con un edge simulado, porque no había ninguna disponible. La pantalla se revisó en el navegador con un edge simulado.
+
+**Limitaciones conocidas:** un micrófono enchufado después de abrir el edge aparece recién al reiniciar el
+edge, porque PortAudio lee la lista al arrancar y refrescarla cortaría las capturas abiertas. Mientras el edge
+tiene abierta una cámara local, esa cámara no responde al escaneo; por eso se mantiene en la lista como «en uso».
 
 ## Cómo funciona la detección (etapas 2 y 3)
 - **Audio:** 16 kHz mono, en ventanas de 1 s con paso de 0,5 s. Cada muestra guarda su hora real de captura,

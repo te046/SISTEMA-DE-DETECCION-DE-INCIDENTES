@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 
 import httpx
 
+from .fusion_compartida import enmascarar_texto
+
 
 class ClienteApi:
     def __init__(self, base: str, clave: str, timeout: float = 5.0, transporte=None):
@@ -16,7 +18,7 @@ class ClienteApi:
                 texto = f"{d.get('mensaje')} {d.get('solucion')}" if isinstance(d, dict) else str(d)
             except ValueError:
                 texto = r.text[:200]
-            raise RuntimeError(f"API {r.status_code}: {texto}")
+            raise RuntimeError(enmascarar_texto(f"API {r.status_code}: {texto}"))
         return r.json()
 
     def registrar(self, nombre: str, tipo: str, zona: str) -> int:
@@ -32,6 +34,22 @@ class ClienteApi:
         except (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError):
             r = self.http.post(ruta, json=cuerpo)
         self._ok(r)
+
+    def estado(self) -> dict:
+        """Qué fuentes deben estar conectadas y si el panel pidió una búsqueda."""
+        return self._ok(self.http.get("/api/v1/edge/estado"))
+
+    def subir_inventario(self, inv: dict) -> None:
+        campos = ("clave", "nombre", "bluetooth", "utilizable", "motivo")
+        self._ok(self.http.post("/api/v1/edge/inventario", json={k: [{c: x.get(c) for c in campos} for x in inv[k]]
+                                                                  for k in ("microfonos", "camaras")}))
+
+    def direccion(self, fuente_id: int) -> str:
+        """Dirección completa de una cámara IP (con usuario y clave). Nunca se escribe en consola."""
+        return self._ok(self.http.get(f"/api/v1/edge/fuentes/{fuente_id}/direccion"))["direccion"]
+
+    def informar(self, fuente_id: int, ok: bool, error: str | None = None) -> None:
+        self._ok(self.http.post(f"/api/v1/edge/fuentes/{fuente_id}/estado", json={"ok": ok, "error": error}))
 
     def subir(self, nombre: str, datos: bytes, mime: str) -> str:
         return self._ok(self.http.post("/api/v1/evidencias", files={"archivo": (nombre, datos, mime)}))["url"]

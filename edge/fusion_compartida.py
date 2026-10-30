@@ -11,5 +11,6 @@ if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 from app.fusion import Deteccion, fusionar  # noqa: E402
+from app.urls import enmascarar_texto, enmascarar_url  # noqa: E402  (sin dependencias, igual que fusion.py)
 
-__all__ = ["Deteccion", "fusionar"]
+__all__ = ["Deteccion", "fusionar", "enmascarar_texto", "enmascarar_url"]
