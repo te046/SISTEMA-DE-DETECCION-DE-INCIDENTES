@@ -67,4 +67,5 @@ Si aparece «X está desconectado», esa zona usa solo la evidencia disponible; 
 | No llegan alertas de audio | Apague las Mejoras de audio; acerque la fuente de sonido; un aplauso no es una clase del diseño. |
 | La cámara IP queda en «▲ Error» | Revise la dirección, el usuario y la clave; si dice «SECRET_KEY cambió», vuelva a agregarla. |
 | «No está el modelo de video» | Las cámaras solo graban evidencia; instálelo con `scripts\instalar_modelo_video.ps1`. |
+| Olvidé o no anoté las claves iniciales | No se pueden volver a ver (solo se guarda su huella cifrada). Cierre la app y ejecute `scriptsestablecer_claves.ps1`: genera claves **nuevas** para las 3 cuentas y las muestra una sola vez. |
 | La aplicación no abre | Revise `%LOCALAPPDATA%\SistemaVigilanciaUDH\registros\app.log`. |

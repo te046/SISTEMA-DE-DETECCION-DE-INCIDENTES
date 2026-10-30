@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from . import NOMBRE, VERSION
-from .soporte import InstanciaUnica, aviso, carpeta_datos, pagina_claves, puerto_libre, recursos
+from .soporte import InstanciaUnica, aviso, carpeta_datos, confirmar, pagina_claves, puerto_libre, recursos
 
 log = logging.getLogger("escritorio")
 
@@ -30,6 +30,8 @@ def argumentos(argv=None):
     ap.add_argument("--sesion", choices=["prueba", "tesis"], default="prueba", help="etiqueta de las mediciones de I1")
     ap.add_argument("--diagnostico", action="store_true", help="registra cada segundo el nivel y las 3 clases de audio")
     ap.add_argument("--prueba-humo", action="store_true", help="arranca sin ventana, comprueba /salud y cierra")
+    ap.add_argument("--restablecer-claves", action="store_true",
+                    help="genera contraseñas NUEVAS para las 3 cuentas y las muestra una sola vez (las anteriores dejan de servir)")
     return ap.parse_args(argv)
 
 
@@ -197,6 +199,13 @@ def main(argv=None) -> int:
     try:
         from app import seed
         cuentas = seed.crear_cuentas(dispositivos_de_ejemplo=False)
+        if a.restablecer_claves and not cuentas:
+            if confirmar("Se generarán contraseñas NUEVAS para las 3 cuentas (responsable, vigilante y administrador).\n\n"
+                         "Las contraseñas actuales dejarán de funcionar y las nuevas se mostrarán UNA sola vez.\n\n¿Continuar?"):
+                cuentas = seed.restablecer_claves()
+                log.warning("Contraseñas restablecidas a pedido del usuario (no se registran las claves).")
+            else:
+                log.info("Restablecimiento de contraseñas cancelado por el usuario.")
         sistema.iniciar()
         abrir_ventana(sistema, cuentas)
         return 0

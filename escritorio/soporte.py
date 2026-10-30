@@ -67,6 +67,15 @@ def aviso(texto: str, titulo: str = NOMBRE) -> None:
         ctypes.windll.user32.MessageBoxW(None, texto, titulo, 0x40)
 
 
+def confirmar(texto: str, titulo: str = NOMBRE) -> bool:
+    """Pregunta Sí/No nativa (aviso amarillo). Fuera de Windows, no confirma."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    MB_YESNO, MB_ICONWARNING, MB_DEFBUTTON2, IDYES = 0x4, 0x30, 0x100, 6
+    return ctypes.windll.user32.MessageBoxW(None, texto, titulo, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES
+
+
 def pagina_claves(cuentas: list[tuple[str, str]]) -> str:
     """HTML (escapado) de la ventana de primera ejecución. Solo vive en memoria: no se guarda ni se registra."""
     filas = "".join(f"<tr><td>{html.escape(u)}</td><td class='c'>{html.escape(c)}</td></tr>" for u, c in cuentas)

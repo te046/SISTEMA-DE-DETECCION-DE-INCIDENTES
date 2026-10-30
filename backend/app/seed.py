@@ -45,5 +45,27 @@ def crear_cuentas(dispositivos_de_ejemplo: bool = True) -> list[tuple[str, str]]
     return nuevas
 
 
+def restablecer_claves() -> list[tuple[str, str]]:
+    """Genera contraseñas NUEVAS para las cuentas del sistema (las anteriores dejan de funcionar) y desbloquea las
+    cuentas. Las antiguas no se pueden recuperar: solo se guardó su hash. Devuelve [(usuario, clave)] sin
+    imprimir ni registrar las claves; la auditoría solo anota que hubo un restablecimiento."""
+    from datetime import datetime, timezone
+    db.init()
+    nuevas = []
+    with db.tx() as con:
+        for u, n, rol, _env in CUENTAS:
+            clave = secrets.token_urlsafe(9)
+            if con.execute("SELECT 1 FROM usuarios WHERE usuario=?", (u,)).fetchone():
+                con.execute("UPDATE usuarios SET pass_hash=?, intentos=0, bloqueado_hasta=NULL WHERE usuario=?",
+                            (security.hash_password(clave), u))
+            else:
+                con.execute("INSERT INTO usuarios(usuario,nombre,rol,pass_hash) VALUES (?,?,?,?)", (u, n, rol, security.hash_password(clave)))
+            nuevas.append((u, clave))
+        con.execute("INSERT INTO auditoria(momento,usuario,accion,detalle) VALUES (?,?,?,?)",
+                    (datetime.now(timezone.utc).isoformat(timespec="milliseconds"), "sistema", "claves_restablecidas",
+                     ", ".join(u for u, _ in nuevas)))
+    return nuevas
+
+
 if __name__ == "__main__":
     main()

@@ -79,3 +79,23 @@ def test_la_api_no_recibe_el_cache_control_del_panel():
     from app.main import app
     r = TestClient(app).get("/api/v1/salud")
     assert r.headers.get("cache-control") is None                 # la API no se toca
+
+
+def test_restablecer_claves_invalida_las_viejas_y_desbloquea(client, capsys):
+    from app import db, security, seed
+    originales = {"responsable.vigilancia": "Prueba-Resp-1", "vigilante.1": "Prueba-Vig-1", "admin": "Prueba-Adm-1"}
+    try:
+        nuevas = dict(seed.restablecer_claves())
+        assert set(nuevas) == set(originales)
+        assert capsys.readouterr().out == ""                                        # no se imprimen
+        assert client.post("/api/v1/auth/token", json={"usuario": "admin", "clave": "Prueba-Adm-1"}).status_code == 401
+        assert client.post("/api/v1/auth/token", json={"usuario": "admin", "clave": nuevas["admin"]}).status_code == 200
+        # vigilante.1 quedó bloqueado por otra prueba: el restablecimiento lo desbloquea
+        assert client.post("/api/v1/auth/token", json={"usuario": "vigilante.1", "clave": nuevas["vigilante.1"]}).status_code == 200
+        with db.tx() as con:
+            fila = con.execute("SELECT detalle FROM auditoria WHERE accion='claves_restablecidas' ORDER BY id DESC").fetchone()
+        assert fila and nuevas["admin"] not in fila["detalle"]                     # la auditoría no guarda claves
+    finally:                                                                       # la base de pruebas es compartida
+        with db.tx() as con:
+            for u, c in originales.items():
+                con.execute("UPDATE usuarios SET pass_hash=?, intentos=0, bloqueado_hasta=NULL WHERE usuario=?", (security.hash_password(c), u))

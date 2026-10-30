@@ -80,3 +80,12 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
 - **Fallo corregido en `scripts\prueba_vivo.ps1`:** la ruta del registro tenía un carácter de control (`\a` → BEL) al
   reescribir el script con Python; nunca habría encontrado el registro. Se revisaron todos los .ps1 y .iss: era el único.
 - `prueba_vivo.ps1 -EnSeco`: arranque, respuesta y cierre ordenado con datos temporales, sin captura; probado: OK.
+
+## Restablecer contraseñas (pedido de Teo: «mostrar las claves otra vez»)
+- Las claves iniciales **no se pueden volver a mostrar**: solo se guardó su hash scrypt. Se agregó
+  `--restablecer-claves` (y `scripts\restablecer_claves.ps1`): pide confirmación Sí/No, genera claves NUEVAS para
+  las 3 cuentas, las desbloquea y las muestra una vez en la ventana «Claves iniciales». La auditoría registra el
+  restablecimiento sin las claves. No se ejecutó sobre los datos reales: las claves deben aparecer en la pantalla de Teo.
+- Al construir, la app de Teo estaba abierta (el .exe de `dist\` estaba en uso): no se cerró su proceso. El .exe nuevo
+  se verificó construyéndolo en `%TEMP%\svu_prueba` (prueba de humo OK). Rutas del scratchpad demasiado largas
+  superan MAX_PATH al empaquetar `cryptography`: usar rutas cortas.
