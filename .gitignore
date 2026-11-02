@@ -13,3 +13,8 @@ edge/modelos/**/*.parcial
 edge/modelos/videomae_rwf2000/
 build/
 dist/
+.env
+.env.*
+.ingest_key
+*.key
+.claude/settings.local.json
