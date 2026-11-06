@@ -18,3 +18,7 @@ dist/
 .ingest_key
 *.key
 .claude/settings.local.json
+# Notas de trabajo locales (no forman parte del sistema)
+PROMPT_*.md
+DECISIONES.md
+plan_de_trabajo.md

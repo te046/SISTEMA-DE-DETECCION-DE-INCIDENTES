@@ -25,7 +25,7 @@ Desarrollo **iterativo e incremental por bloques**:
 1. Cada bloque toma una o más historias del backlog (sección 5).
 2. El bloque se cierra solo cuando sus pruebas automáticas están en verde.
 3. Cada bloque cerrado queda como un commit con la convención `feat`, `fix`, `docs` o `chore`.
-4. Toda decisión técnica se registra con su razón en `DECISIONES.md`.
+4. Los ajustes de cada iteración se registran con su motivo (sección 4).
 5. Los fallos encontrados se registran como incidencias con su causa, su corrección y su estado.
 
 No se usó Scrum ni Kanban de forma formal: el proyecto tiene un solo desarrollador, y el ciclo es «bloque → pruebas → commit → revisión».

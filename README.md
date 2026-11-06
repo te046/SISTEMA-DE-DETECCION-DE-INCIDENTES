@@ -9,14 +9,14 @@ y la verdad de campo para precisión, recall y F1.
 > El panel también se puede abrir en un navegador, **solo como ayuda de desarrollo** (`python run.py`). Toda prueba
 > manual y todo script usan la ventana de escritorio.
 
-Manual breve para el vigilante y para la sustentación: [`MANUAL.md`](MANUAL.md). Decisiones técnicas: [`DECISIONES.md`](DECISIONES.md).
+Manual breve para el vigilante y para la sustentación: [`MANUAL.md`](MANUAL.md). Plan de desarrollo: [`docs/PLAN_DESARROLLO.md`](docs/PLAN_DESARROLLO.md).
 
 ## Estado y límites (léase antes de presentar resultados)
 - **Video = línea base.** «Posible agresión» con VideoMAE afinado en RWF-2000 (CC BY-NC 4.0). No está calibrado con
   video del pabellón y **no hay métricas medidas en este proyecto** (la exactitud 0,73 del autor no es nuestra).
   El panel lo marca «Video: línea base».
 - **Audio sin calibrar.** YAMNet con umbral 0,50 y el mapeo de clases de diseño. La calibración por clase y la regla
-  de persistencia están **pendientes** (ver `plan_de_trabajo.md`). No hay métricas medidas del audio.
+  de persistencia están **pendientes** (ver `docs/PLAN_DESARROLLO.md`). No hay métricas medidas del audio.
 - **Condición de uso:** apague las **«Mejoras de audio»** del micrófono en Windows (Configuración › Sistema ›
   Sonido › Entrada › su micrófono). Con ellas encendidas, el micrófono Intel Smart Sound entregó largos tramos de
   silencio digital (−90 dBFS) y ninguna clase del mapeo.
