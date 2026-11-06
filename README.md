@@ -16,7 +16,7 @@ Manual breve para el vigilante y para la sustentación: [`MANUAL.md`](MANUAL.md)
   video del pabellón y **no hay métricas medidas en este proyecto** (la exactitud 0,73 del autor no es nuestra).
   El panel lo marca «Video: línea base».
 - **Audio sin calibrar.** YAMNet con umbral 0,50 y el mapeo de clases de diseño. La calibración por clase y la regla
-  de persistencia están **pendientes** (ver `CLAUDE.md`). No hay métricas medidas del audio.
+  de persistencia están **pendientes** (ver `plan_de_trabajo.md`). No hay métricas medidas del audio.
 - **Condición de uso:** apague las **«Mejoras de audio»** del micrófono en Windows (Configuración › Sistema ›
   Sonido › Entrada › su micrófono). Con ellas encendidas, el micrófono Intel Smart Sound entregó largos tramos de
   silencio digital (−90 dBFS) y ninguna clase del mapeo.

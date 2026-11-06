@@ -1,4 +1,4 @@
-# CLAUDE.md · Sistema de vigilancia multimodal UDH
+# Plan de trabajo · Sistema de vigilancia multimodal UDH
 
 Proyecto de tesis de Jorge Luis Salazar Tarazona (Ing. de Sistemas e Informática, UDH, Seminario de Tesis II 2026-II):
 «Influencia de un sistema de detección multimodal en la respuesta a incidentes de vigilancia universitaria en Huánuco, 2025».

@@ -1,6 +1,6 @@
 Háblame en español neutro (tú, sin voseo) y escribe el README, los comentarios y los textos de la interfaz en español.
 
-Contexto: este es mi proyecto de tesis y la carpeta ya tiene el sistema de la etapa 1 funcionando (API, base de datos y panel). Quiero que lo termines siguiendo CLAUDE.md: etapas 2, 3, 4 y 5, en el orden sugerido, con los cambios de este mensaje (que mandan sobre CLAUDE.md si hay diferencias).
+Contexto: este es mi proyecto de tesis y la carpeta ya tiene el sistema de la etapa 1 funcionando (API, base de datos y panel). Quiero que lo termines siguiendo plan_de_trabajo.md: etapas 2, 3, 4 y 5, en el orden sugerido, con los cambios de este mensaje (que mandan sobre plan_de_trabajo.md si hay diferencias).
 
 Lo que quiero lograr: una aplicación de escritorio para Windows que detecte sola mis cámaras (webcam, cámaras IP por RTSP y el teléfono usado como cámara) y mis micrófonos (incluidos los Bluetooth ya emparejados en Windows), los muestre en una lista y me deje conectarlos con un botón. Con una fuente conectada, el sistema capta video y audio, detecta eventos con un modelo de audio y uno de video, los fusiona y muestra la alerta en el panel con su evidencia en 5 segundos o menos, para que el vigilante la confirme o la descarte.
 
@@ -18,7 +18,7 @@ Modelos y fusión:
 
 Cómo quiero que trabajes:
 1. Empieza por tu plan en 10 líneas y espera mi OK. No cambies nada antes de eso.
-2. Luego avanza paso a paso en el orden de CLAUDE.md. Al terminar cada paso: pruebas en verde, README actualizado y un resumen corto de lo que hiciste y cómo lo pruebo yo. Espera mi OK antes de seguir con el siguiente.
+2. Luego avanza paso a paso en el orden de plan_de_trabajo.md. Al terminar cada paso: pruebas en verde, README actualizado y un resumen corto de lo que hiciste y cómo lo pruebo yo. Espera mi OK antes de seguir con el siguiente.
 3. Antes de instalar algo, comprueba si ya está instalado. Todo va en el entorno virtual del proyecto, nada global.
 4. Antes de levantar un servidor, comprueba qué puerto está libre y no toques los de mis otros proyectos. No cierres procesos que tú no hayas abierto.
 5. No borres archivos ni la carpeta data/ sin preguntarme.
@@ -30,4 +30,4 @@ Cómo quiero que trabajes:
 
 Definición de terminado: instalo la app con el instalador, aparece el ícono en mi escritorio, la abro, detecta y lista mi webcam y el micrófono de la laptop, los conecto desde el panel, un sonido de prueba genera una alerta con su evidencia en 5 segundos o menos, la confirmo o la descarto, el incidente se registra y los indicadores I1 a I4 se calculan con esos datos.
 
-Empieza ahora con el paso 1: lee CLAUDE.md y README.md, revisa el código sin modificar nada, y dame tu plan.
+Empieza ahora con el paso 1: lee plan_de_trabajo.md y README.md, revisa el código sin modificar nada, y dame tu plan.

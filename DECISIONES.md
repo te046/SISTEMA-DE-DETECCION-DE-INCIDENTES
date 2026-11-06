@@ -1,6 +1,6 @@
 # Registro de decisiones (trabajo autónomo del 30/10/2026)
 
-Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUDE.md`.
+Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `plan_de_trabajo.md`.
 
 ## Permisos
 - **`.claude/settings.json` NO se creó.** El hook `guardia-credenciales` bloqueó el archivo porque la lista de
@@ -9,7 +9,7 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
   **Qué hacer:** Teo crea `.claude/settings.json` a mano con las reglas pedidas (permitir leer/editar la carpeta,
   pytest y Python/pip de `.venv`, git status/diff/add/commit y Temp; denegar `data/`, `.env`, `.ingest_key`,
   `.secret_key`, archivos de claves, `.ssh`, carpetas de navegadores y de gestores de contraseñas, `rm -rf` y
-  `curl | sh`). Mientras tanto siguen vigentes el hook y las reglas de `CLAUDE.md`, que se respetaron igual.
+  `curl | sh`). Mientras tanto siguen vigentes el hook y las reglas de `plan_de_trabajo.md`, que se respetaron igual.
 - **Verificación:** una lectura de prueba sobre `data/__prueba_bloqueo_inexistente.txt` respondió «no existe» (no
   «denegado»), lo que confirma que las reglas de bloqueo NO están cargadas. No se leyó ningún archivo real de `data/`.
 
@@ -59,11 +59,11 @@ Cada línea: qué se decidió y por qué. Las decisiones de Teo están en `CLAUD
 - README reorganizado alrededor del aplicativo de escritorio (el navegador queda como ayuda de desarrollo), con los
   límites al principio: video línea base, audio sin calibrar, condición de apagar las Mejoras de audio.
 - MANUAL.md nuevo: instalación, vigilante, responsable y guion de sustentación con lo que SÍ y lo que NO se puede afirmar.
-- CLAUDE.md: aclaración «aplicativo de escritorio», política de decisiones, estado real y pendientes honestos del
+- plan_de_trabajo.md: aclaración «aplicativo de escritorio», política de decisiones, estado real y pendientes honestos del
   pedido original no implementados (RNF-02 por latidos, Bluetooth con `bleak`, vista previa de cámara, ONVIF, etapa 5).
 
 ## e. Etapa 5 (Docker, Caddy, PostgreSQL)
-- **No se implementó** por tiempo: queda como trabajo futuro documentado (README «Trabajo futuro» y CLAUDE.md).
+- **No se implementó** por tiempo: queda como trabajo futuro documentado (README «Trabajo futuro» y plan_de_trabajo.md).
   Requiere además adaptar la base a PostgreSQL y mover `panel_activo` a la base (hoy en memoria).
 
 ## Verificación en la laptop (30/10/2026, autorizada por Teo)
